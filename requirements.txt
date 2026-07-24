@@ -1,0 +1,6 @@
+aiohttp==3.9.1
+aiofiles==23.2.1
+sqlalchemy==2.0.23
+asyncpg==0.29.0
+lxml==4.9.3
+bleak==0.21.1

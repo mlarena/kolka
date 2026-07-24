@@ -1,0 +1,6 @@
+aiohttp
+aiofiles
+sqlalchemy
+asyncpg
+lxml
+bleak
