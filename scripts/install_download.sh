@@ -1,6 +1,6 @@
 #!/bin/bash
 # ──────────────────────────────────────────────────────────────────────────────
-# Установка сервиса kolka_download (скачивание фото)
+# Установка kolka_download (скачивание фото по timer, каждый час)
 #
 # Использование:
 #   sudo bash install_download.sh
@@ -9,74 +9,86 @@ set -euo pipefail
 
 SERVICE_NAME="kolka_download"
 SERVICE_DIR="/opt/kolka_service_download"
-SERVICE_USER="root"
 SCANNER_DIR="/scanner"
 VENV_DIR="${SERVICE_DIR}/venv"
 LOG_DIR="${SERVICE_DIR}/logs"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+TIMER_FILE="/etc/systemd/system/${SERVICE_NAME}.timer"
 LOGROTATE_FILE="/etc/logrotate.d/${SERVICE_NAME}"
 
 echo "═══════════════════════════════════════════════════════════"
-echo "  Установка сервиса: ${SERVICE_NAME}"
+echo "  Установка: ${SERVICE_NAME} (timer, каждый час)"
 echo "═══════════════════════════════════════════════════════════"
 
-# ── 1. Создание рабочей директории ──────────────────────────────────────────
-echo "[1/7] Создание директории ${SERVICE_DIR}..."
+# ── 1. Остановка старого сервиса если есть ───────────────────────────────────
+echo "[1/8] Остановка старого сервиса..."
+systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
+systemctl stop "${SERVICE_NAME}.timer" 2>/dev/null || true
+
+# ── 2. Создание рабочей директории ──────────────────────────────────────────
+echo "[2/8] Создание директории ${SERVICE_DIR}..."
 mkdir -p "${SERVICE_DIR}"
 mkdir -p "${LOG_DIR}"
 
-# ── 2. Копирование файлов ───────────────────────────────────────────────────
-echo "[2/7] Копирование файлов..."
+# ── 3. Копирование файлов ───────────────────────────────────────────────────
+echo "[3/8] Копирование файлов..."
 cp "${SCANNER_DIR}/kolka_download_linux.py"  "${SERVICE_DIR}/kolka_download.py"
 cp "${SCANNER_DIR}/models.py"                "${SERVICE_DIR}/models.py"
 cp "${SCANNER_DIR}/config_loader.py"         "${SERVICE_DIR}/config_loader.py"
-cp "${SCANNER_DIR}/calibration.py"           "${SERVICE_DIR}/calibration.py"
 cp "${SCANNER_DIR}/compress_images.py"       "${SERVICE_DIR}/compress_images.py"
 cp "${SCANNER_DIR}/appsettings.json"         "${SERVICE_DIR}/appsettings.json"
 cp "${SCANNER_DIR}/requirements_linux.txt"   "${SERVICE_DIR}/requirements.txt"
 
-# ── 3. Создание виртуального окружения ──────────────────────────────────────
-echo "[3/7] Создание виртуального окружения..."
+# ── 4. Создание виртуального окружения ──────────────────────────────────────
+echo "[4/8] Создание виртуального окружения..."
 python3 -m venv "${VENV_DIR}"
 "${VENV_DIR}/bin/pip" install --upgrade pip
 "${VENV_DIR}/bin/pip" install -r "${SERVICE_DIR}/requirements.txt"
 
-# ── 4. Создание systemd-сервиса ─────────────────────────────────────────────
-echo "[4/7] Создание systemd-сервиса..."
+# ── 5. Создание systemd service (oneshot) ───────────────────────────────────
+echo "[5/8] Создание systemd service (oneshot)..."
 cat > "${SERVICE_FILE}" << 'UNIT'
 [Unit]
-Description=Kolka Download (скачивание фото с фотоловушек)
+Description=Kolka Download — скачивание фото с фотоловушек
 After=network.target bluetooth.target postgresql.service
 Wants=postgresql.service
 
 [Service]
-Type=simple
+Type=oneshot
 User=root
 WorkingDirectory=/opt/kolka_service_download
 ExecStart=/opt/kolka_service_download/venv/bin/python /opt/kolka_service_download/kolka_download.py
 
-# Перезапуск при ошибке
-Restart=on-failure
-RestartSec=60
+# Таймаут (30 мин — камеры могут быть медленными)
+TimeoutStartSec=1800
 
 # Логирование в systemd journal
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=kolka-download
 
-# Ограничения
-TimeoutStartSec=30
-TimeoutStopSec=30
-
 # Окружение
 Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=multi-user.target
+Environment=PYTHONDONTWRITEBYTECODE=1
 UNIT
 
-# ── 5. Настройка ротации логов ──────────────────────────────────────────────
-echo "[5/7] Настройка ротации логов..."
+# ── 6. Создание systemd timer (каждый час) ──────────────────────────────────
+echo "[6/8] Создание systemd timer (каждый час)..."
+cat > "${TIMER_FILE}" << 'TIMER'
+[Unit]
+Description=Таймер скачивания фото (каждый час)
+
+[Timer]
+OnCalendar=*-*-* *:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+# ── 7. Настройка ротации логов ──────────────────────────────────────────────
+echo "[7/8] Настройка ротации логов..."
 cat > "${LOGROTATE_FILE}" << 'LOGROTATE'
 /opt/kolka_service_download/logs/*.log {
     daily
@@ -90,20 +102,30 @@ cat > "${LOGROTATE_FILE}" << 'LOGROTATE'
 }
 LOGROTATE
 
-# ── 6. Активация сервиса ────────────────────────────────────────────────────
-echo "[6/7] Активация сервиса..."
+# ── 8. Активация ────────────────────────────────────────────────────────────
+echo "[8/8] Активация..."
 systemctl daemon-reload
-systemctl enable "${SERVICE_NAME}"
+systemctl enable "${SERVICE_NAME}.timer"
+systemctl start "${SERVICE_NAME}.timer"
 
-echo "[7/7] Готово!"
 echo ""
 echo "═══════════════════════════════════════════════════════════"
-echo "  Сервис ${SERVICE_NAME} установлен"
+echo "  ${SERVICE_NAME} установлен"
 echo "═══════════════════════════════════════════════════════════"
 echo ""
-echo "Запуск:       sudo systemctl start ${SERVICE_NAME}"
-echo "Остановка:    sudo systemctl stop ${SERVICE_NAME}"
-echo "Статус:       sudo systemctl status ${SERVICE_NAME}"
-echo "Логи (journald): sudo journalctl -u ${SERVICE_NAME} -f"
-echo "Логи (файл):     tail -f ${LOG_DIR}/download_log_*.log"
+echo "Таймер:"
+echo "  Статус:      sudo systemctl status ${SERVICE_NAME}.timer"
+echo "  Список:      sudo systemctl list-timers ${SERVICE_NAME}.timer"
+echo ""
+echo "Ручной запуск:"
+echo "  Запуск:      sudo systemctl start ${SERVICE_NAME}"
+echo "  Статус:      sudo systemctl status ${SERVICE_NAME}"
+echo ""
+echo "Логи:"
+echo "  journalctl:  sudo journalctl -u ${SERVICE_NAME} -f"
+echo "  Файлы:       tail -f ${LOG_DIR}/download_log_*.log"
+echo ""
+echo "Остановка:"
+echo "  sudo systemctl stop ${SERVICE_NAME}.timer"
+echo "  sudo systemctl disable ${SERVICE_NAME}.timer"
 echo ""

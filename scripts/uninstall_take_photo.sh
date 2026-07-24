@@ -1,6 +1,6 @@
 #!/bin/bash
 # ──────────────────────────────────────────────────────────────────────────────
-# Удаление сервиса kolka_take_photo
+# Удаление kolka_take_photo
 #
 # Использование:
 #   sudo bash uninstall_take_photo.sh
@@ -13,29 +13,29 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 LOGROTATE_FILE="/etc/logrotate.d/${SERVICE_NAME}"
 
 echo "═══════════════════════════════════════════════════════════"
-echo "  Удаление сервиса: ${SERVICE_NAME}"
+echo "  Удаление: ${SERVICE_NAME}"
 echo "═══════════════════════════════════════════════════════════"
 
 # ── 1. Остановка и отключение ───────────────────────────────────────────────
-echo "[1/4] Остановка сервиса..."
+echo "[1/4] Остановка..."
 systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
 systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
 
 # ── 2. Удаление systemd-файла ───────────────────────────────────────────────
-echo "[2/4] Удаление systemd-конфига..."
+echo "[2/4] Удаление systemd конфига..."
 rm -f "${SERVICE_FILE}"
 systemctl daemon-reload
 
 # ── 3. Удаление logrotate ───────────────────────────────────────────────────
-echo "[3/4] Удаление logrotate-конфига..."
+echo "[3/4] Удаление logrotate..."
 rm -f "${LOGROTATE_FILE}"
 
 # ── 4. Удаление рабочей директории ──────────────────────────────────────────
-echo "[4/4] Удаление директории ${SERVICE_DIR}..."
+echo "[4/4] Удаление ${SERVICE_DIR}..."
 rm -rf "${SERVICE_DIR}"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════"
-echo "  Сервис ${SERVICE_NAME} удалён"
+echo "  ${SERVICE_NAME} удалён"
 echo "═══════════════════════════════════════════════════════════"
 echo ""

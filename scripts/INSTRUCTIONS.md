@@ -2,85 +2,73 @@
 
 ## Сервисы
 
-| Сервис | Назначение | Рабочая папка |
-|--------|-----------|---------------|
-| `kolka_take_photo` | Снимки по расписанию | `/opt/kolka_service_take_photo` |
-| `kolka_download` | Скачивание фото | `/opt/kolka_service_download` |
+| Сервис | Тип | Назначение | Интервал |
+|--------|-----|-----------|----------|
+| `kolka_take_photo` | Долгоживущий сервис | Снимки по расписанию | Каждые N мин (из конфига) |
+| `kolka_download` | Timer + oneshot | Скачивание фото | Каждый час |
 
 ## Установка
 
 ```bash
 cd /scanner/scripts
 
-# Установка обоих сервисов
-sudo bash install_take_photo.sh
-sudo bash install_download.sh
+# Калибровка (ОБЯЗАТЕЛЬНО перед первым запуском)
+cd /scanner && source venv/bin/activate
+python3 calibration.py
 
-# Или по отдельности
-sudo bash install_take_photo.sh
-sudo bash install_download.sh
+# Установка сервисов
+sudo bash scripts/install_take_photo.sh
+sudo bash scripts/install_download.sh
 ```
 
-## Управление
-
-### Запуск
+## Управление kolka_take_photo (сервис)
 
 ```bash
-sudo systemctl start kolka_take_photo
-sudo systemctl start kolka_download
-```
-
-### Остановка
-
-```bash
-sudo systemctl stop kolka_take_photo
-sudo systemctl stop kolka_download
-```
-
-### Перезапуск
-
-```bash
-sudo systemctl restart kolka_take_photo
-sudo systemctl restart kolka_download
-```
-
-### Автозапуск при загрузке
-
-```bash
-sudo systemctl enable kolka_take_photo
-sudo systemctl enable kolka_download
-```
-
-### Отключение автозапуска
-
-```bash
-sudo systemctl disable kolka_take_photo
-sudo systemctl disable kolka_download
-```
-
-## Просмотр статуса
-
-```bash
+# Статус
 sudo systemctl status kolka_take_photo
-sudo systemctl status kolka_download
+
+# Запуск / Остановка / Перезапуск
+sudo systemctl start kolka_take_photo
+sudo systemctl stop kolka_take_photo
+sudo systemctl restart kolka_take_photo
+
+# Автозапуск
+sudo systemctl enable kolka_take_photo
+sudo systemctl disable kolka_take_photo
+```
+
+## Управление kolka_download (timer)
+
+```bash
+# Статус таймера
+sudo systemctl status kolka_download.timer
+sudo systemctl list-timers kolka_download.timer
+
+# Ручной запуск скачивания
+sudo systemctl start kolka_download
+
+# Остановка таймера
+sudo systemctl stop kolka_download.timer
+sudo systemctl disable kolka_download.timer
+
+# Включение таймера
+sudo systemctl enable kolka_download.timer
+sudo systemctl start kolka_download.timer
 ```
 
 ## Логи
 
-### Через systemd journal (рекомендуется)
+### Через systemd journal
 
 ```bash
-# Последние 100 строк
+# Take Photo — последние 100 строк
 sudo journalctl -u kolka_take_photo -n 100
 
-# В реальном времени
+# Take Photo — в реальном времени
 sudo journalctl -u kolka_take_photo -f
 
-# За сегодня
-sudo journalctl -u kolka_take_photo --since today
-
-# За конкретный период
-sudo journalctl -u kolka_take_photo --since "2026-07-24 05:00" --until "2026-07-24 06:00"
+# Download — последние запуски
+sudo journalctl -u kolka_download --since today
 
 # Только ошибки
 sudo journalctl -u kolka_take_photo -p err
@@ -103,8 +91,6 @@ tail -f /opt/kolka_service_download/logs/download_log_*.log
 - Хранение: 14 дней
 - Сжатие: gzip (с задержкой 1 день)
 
-Настройки: `/etc/logrotate.d/kolka_take_photo`, `/etc/logrotate.d/kolka_download`
-
 ## Удаление
 
 ```bash
@@ -112,22 +98,6 @@ cd /scanner/scripts
 
 sudo bash uninstall_take_photo.sh
 sudo bash uninstall_download.sh
-```
-
-## Структура файлов сервиса
-
-```
-/opt/kolka_service_take_photo/
-├── kolka_take_photo.py    # Основной скрипт
-├── models.py              # Модели БД
-├── config_loader.py       # Загрузка конфига
-├── calibration.py         # Калибровка
-├── compress_images.py     # Сжатие изображений
-├── appsettings.json       # Конфигурация
-├── requirements.txt       # Зависимости
-├── venv/                  # Виртуальное окружение
-└── logs/                  # Лог-файлы
-    └── take_photo_log_*.log
 ```
 
 ## Конфигурация
@@ -139,9 +109,30 @@ sudo bash uninstall_download.sh
 
 Изменить конфиг можно через БД:
 ```sql
+-- Интервал снимков (15 мин)
 INSERT INTO "PhotoTrapConfig" ("Key", "Value", "Description")
 VALUES ('SnapshotIntervalMinutes', '15', 'Интервал снимков в минутах')
 ON CONFLICT ("Key") DO UPDATE SET "Value" = EXCLUDED."Value";
+
+-- Количество камер
+INSERT INTO "PhotoTrapConfig" ("Key", "Value", "Description")
+VALUES ('CamerasCount', '2', 'Количество фотоловушек')
+ON CONFLICT ("Key") DO UPDATE SET "Value" = EXCLUDED."Value";
+```
+
+## Калибровка
+
+Калибровка выполняется **вручную** перед первым запуском:
+
+```bash
+cd /scanner && source venv/bin/activate
+python3 calibration.py
+```
+
+Проверка что камеры настроены:
+```sql
+SELECT "Id", "Name", "MacAddress", "WifiSSID" FROM "PhotoTrap";
+SELECT "Value" FROM "PhotoTrapConfig" WHERE "Key" = 'CamerasCount';
 ```
 
 ## Требования
@@ -151,3 +142,28 @@ ON CONFLICT ("Key") DO UPDATE SET "Value" = EXCLUDED."Value";
 - Bluetooth (bluez, libbluetooth-dev)
 - NetworkManager (nmcli)
 - ffmpeg (для сжатия изображений)
+
+## Структура файлов
+
+```
+/opt/kolka_service_take_photo/
+├── kolka_take_photo.py    # Основной скрипт
+├── models.py              # Модели БД
+├── config_loader.py       # Загрузка конфига
+├── compress_images.py     # Сжатие изображений
+├── appsettings.json       # Конфигурация
+├── requirements.txt       # Зависимости
+├── venv/                  # Виртуальное окружение
+└── logs/                  # Лог-файлы
+
+/opt/kolka_service_download/
+├── kolka_download.py      # Основной скрипт
+├── models.py              # Модели БД
+├── config_loader.py       # Загрузка конфига
+├── compress_images.py     # Сжатие изображений
+├── appsettings.json       # Конфигурация
+├── requirements.txt       # Зависимости
+├── service.lock           # Файл-блокировка (создаётся при запуске)
+├── venv/                  # Виртуальное окружение
+└── logs/                  # Лог-файлы
+```

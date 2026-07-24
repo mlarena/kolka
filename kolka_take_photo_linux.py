@@ -8,6 +8,9 @@
 import asyncio
 import aiohttp
 import logging
+import signal
+import sys
+import os
 from logging.handlers import TimedRotatingFileHandler
 import json
 import subprocess
@@ -20,9 +23,18 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, and_
 from bleak import BleakScanner, BleakClient
 
-from models import Base, PhotoTrap, SnapshotLog
-from calibration import run_calibration
+from models import Base, PhotoTrap, SnapshotLog, PhotoTrapConfig
 from config_loader import load_config
+
+# ── Graceful shutdown ─────────────────────────────────────────────────────────
+shutdown_event = asyncio.Event()
+
+def _handle_signal(sig, frame):
+    logger.info("Получен сигнал %s, завершение...", sig)
+    shutdown_event.set()
+
+signal.signal(signal.SIGTERM, _handle_signal)
+signal.signal(signal.SIGINT, _handle_signal)
 
 # ── Логирование ───────────────────────────────────────────────────────────────
 log_dir = Path("logs")
@@ -53,7 +65,11 @@ class SnapshotCameraManager:
         logger.info(f"Wi-Fi интерфейс: {self.wifi_interface}")
 
         db_url = self._convert_connection_string(self.config['ConnectionStrings']['DefaultConnection'])
-        self.engine = create_async_engine(db_url, echo=False)
+        self.engine = create_async_engine(
+            db_url, echo=False,
+            pool_size=2, max_overflow=1,
+            pool_recycle=3600, pool_pre_ping=True
+        )
         self.async_session = sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
 
         self.wifi_password = self.config.get('WifiPassword', '12345678')
@@ -92,6 +108,79 @@ class SnapshotCameraManager:
         except Exception:
             pass
         return "wlan0"
+
+    async def _validate_cameras(self, session) -> bool:
+        """Проверить что камеры настроены: MacAddress + WifiSSID заполнены, количество = CamerasCount"""
+        # Получаем ожидаемое количество из конфига
+        try:
+            from sqlalchemy import func
+            result = await session.execute(
+                select(PhotoTrapConfig.Value).where(PhotoTrapConfig.Key == 'CamerasCount')
+            )
+            cameras_count_str = result.scalar_one_or_none()
+            expected_count = int(cameras_count_str) if cameras_count_str else 1
+        except Exception as e:
+            logger.warning(f"Не удалось прочитать CamerasCount из БД: {e}, ожидаем 1")
+            expected_count = 1
+
+        # Считаем камеры с заполненными MacAddress и WifiSSID
+        result = await session.execute(
+            select(PhotoTrap).where(
+                PhotoTrap.MacAddress.isnot(None),
+                PhotoTrap.WifiSSID.isnot(None)
+            )
+        )
+        cameras = result.scalars().all()
+        valid_count = len(cameras)
+
+        logger.info(f"Проверка камер: в БД с SSID={valid_count}, ожидается={expected_count}")
+
+        if valid_count == 0:
+            logger.error("В таблице PhotoTrap нет камер с заполненными MacAddress и WifiSSID")
+            return False
+
+        if valid_count < expected_count:
+            logger.error(f"Камер с SSID: {valid_count}, а нужно: {expected_count}. "
+                        f"Выполните калибровку: python calibration.py")
+            return False
+
+        if valid_count > expected_count:
+            logger.warning(f"Камер с SSID: {valid_count}, а в конфиге CamerasCount={expected_count}. "
+                          f"Будут обработаны все {valid_count} камер.")
+
+        # Логируем список камер
+        for cam in cameras:
+            logger.info(f"  OK: {cam.Name} | {cam.MacAddress} | SSID: {cam.WifiSSID}")
+
+        return True
+
+    async def _load_cameras(self, session) -> list:
+        """Загрузить активные камеры с заполненными MacAddress и WifiSSID"""
+        result = await session.execute(
+            select(PhotoTrap).where(
+                PhotoTrap.MacAddress.isnot(None),
+                PhotoTrap.WifiSSID.isnot(None),
+                PhotoTrap.IsActive == True
+            )
+        )
+        return result.scalars().all()
+
+    async def _wait_with_shutdown(self, session, seconds: int):
+        """Ожидание с проверкой SIGTERM каждые 60 сек и перечитыванием конфига"""
+        waited = 0
+        while waited < seconds and not shutdown_event.is_set():
+            chunk = min(60, seconds - waited)
+            try:
+                await asyncio.wait_for(shutdown_event.wait(), timeout=chunk)
+                break
+            except asyncio.TimeoutError:
+                waited += chunk
+                # Перечитываем конфиг и камеры
+                try:
+                    db_config = await load_config(session)
+                    self._apply_config(db_config)
+                except Exception as e:
+                    logger.warning(f"Ошибка перечитывания конфига: {e}")
 
     def _convert_connection_string(self, conn_string: str) -> str:
         params = {part.split('=')[0].strip(): part.split('=')[1].strip()
@@ -330,62 +419,58 @@ class SnapshotCameraManager:
     async def run(self):
         await self.init_db()
 
-        async with self.async_session() as session:
-            db_config = await load_config(session)
-        self._apply_config(db_config)
-
-        need_calibration = self.config.get("NeedCalibration", False)
-        if need_calibration:
-            logger.info("Калибровка включена")
-            await run_calibration()
-
-        async with self.async_session() as session:
-            result = await session.execute(
-                select(PhotoTrap).where(PhotoTrap.MacAddress.isnot(None), PhotoTrap.IsActive == True)
-            )
-            cameras = result.scalars().all()
-
-        if not cameras:
-            logger.error("Нет активных камер. Завершение.")
-            return
-
-        logger.info("Активные камеры:")
-        for cam in cameras:
-            logger.info(f"  {cam.Name} | {cam.MacAddress} | SSID: {cam.WifiSSID or '---'}")
-
-        logger.info(f"\nИнтервал снимков: {self.snapshot_interval} мин")
-        logger.info("=" * 50)
-
-        cycle = 0
-        while True:
-            cycle += 1
-            cycle_start = datetime.now()
-            logger.info(f"\n{'='*50}")
-            logger.info(f"ЦИКЛ #{cycle} | {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info(f"{'='*50}")
-
-            for cam in cameras:
-                if not cam.WifiSSID:
-                    logger.info(f"[{cam.MacAddress}] Пропуск — нет SSID")
-                    continue
-                await self.make_snapshot(cam, cycle)
-                if cam != cameras[-1]:
-                    await asyncio.sleep(self.camera_cooldown)
-
-            elapsed = (datetime.now() - cycle_start).total_seconds()
-            wait = max(0, self.snapshot_interval * 60 - elapsed)
-            logger.info(f"\nЦикл #{cycle} завершён за {elapsed:.0f} сек. Следующий через {wait:.0f} сек ({wait/60:.1f} мин)")
-
-            waited = 0
-            while waited < wait:
-                sleep_time = min(60, wait - waited)
-                await asyncio.sleep(sleep_time)
-                waited += sleep_time
-                async with self.async_session() as session:
-                    db_config = await load_config(session)
+        try:
+            async with self.async_session() as session:
+                db_config = await load_config(session)
                 self._apply_config(db_config)
-                if waited < wait:
-                    logger.debug(f"Конфиг перечитан. Интервал: {self.snapshot_interval} мин")
+
+                # ── Проверка что камеры настроены ──────────────────────────────
+                if not await self._validate_cameras(session):
+                    logger.error("Камеры не настроены. Выполните калибровку: python calibration.py")
+                    return
+
+                logger.info(f"\nИнтервал снимков: {self.snapshot_interval} мин")
+                logger.info("=" * 50)
+
+                cycle = 0
+                while not shutdown_event.is_set():
+                    cycle += 1
+                    cycle_start = datetime.now()
+                    logger.info(f"\n{'='*50}")
+                    logger.info(f"ЦИКЛ #{cycle} | {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}")
+                    logger.info(f"{'='*50}")
+
+                    # Перечитываем камеры в каждом цикле (IsActive может измениться)
+                    cameras = await self._load_cameras(session)
+                    if not cameras:
+                        logger.warning("Нет активных камер, ждём 5 мин...")
+                        await self._wait_with_shutdown(session, 300)
+                        continue
+
+                    for cam in cameras:
+                        if shutdown_event.is_set():
+                            break
+                        if not cam.WifiSSID:
+                            logger.info(f"[{cam.MacAddress}] Пропуск — нет SSID")
+                            continue
+                        await self.make_snapshot(cam, cycle)
+                        if cam != cameras[-1]:
+                            await asyncio.sleep(self.camera_cooldown)
+
+                    if shutdown_event.is_set():
+                        break
+
+                    elapsed = (datetime.now() - cycle_start).total_seconds()
+                    wait = max(0, self.snapshot_interval * 60 - elapsed)
+                    logger.info(f"\nЦикл #{cycle} завершён за {elapsed:.0f} сек. Следующий через {wait:.0f} сек ({wait/60:.1f} мин)")
+
+                    await self._wait_with_shutdown(session, wait)
+
+        except Exception as e:
+            logger.error(f"Ошибка в run(): {e}", exc_info=True)
+        finally:
+            await self.engine.dispose()
+            logger.info("Ресурсы освобождены")
 
 
 if __name__ == "__main__":

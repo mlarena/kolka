@@ -23,9 +23,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, and_
 from bleak import BleakScanner, BleakClient
 
-from models import Base, PhotoTrap, DownloadLog, SnapshotLog
+from models import Base, PhotoTrap, DownloadLog, SnapshotLog, PhotoTrapConfig
 from compress_images import compress_images
-from calibration import run_calibration
 from config_loader import load_config
 
 
@@ -439,6 +438,47 @@ class UnifiedCameraManager:
         msg_lower = error_msg.lower()
         return any(kw in msg_lower for kw in network_keywords)
 
+    async def _validate_cameras(self, session) -> bool:
+        """Проверить что камеры настроены: MacAddress + WifiSSID заполнены, количество = CamerasCount"""
+        try:
+            result = await session.execute(
+                select(PhotoTrapConfig.Value).where(PhotoTrapConfig.Key == 'CamerasCount')
+            )
+            cameras_count_str = result.scalar_one_or_none()
+            expected_count = int(cameras_count_str) if cameras_count_str else 1
+        except Exception as e:
+            logger.warning(f"Не удалось прочитать CamerasCount из БД: {e}, ожидаем 1")
+            expected_count = 1
+
+        result = await session.execute(
+            select(PhotoTrap).where(
+                PhotoTrap.MacAddress.isnot(None),
+                PhotoTrap.WifiSSID.isnot(None)
+            )
+        )
+        cameras = result.scalars().all()
+        valid_count = len(cameras)
+
+        logger.info(f"Проверка камер: в БД с SSID={valid_count}, ожидается={expected_count}")
+
+        if valid_count == 0:
+            logger.error("В таблице PhotoTrap нет камер с заполненными MacAddress и WifiSSID")
+            return False
+
+        if valid_count < expected_count:
+            logger.error(f"Камер с SSID: {valid_count}, а нужно: {expected_count}. "
+                        f"Выполните калибровку: python calibration.py")
+            return False
+
+        if valid_count > expected_count:
+            logger.warning(f"Камер с SSID: {valid_count}, а в конфиге CamerasCount={expected_count}. "
+                          f"Будут обработаны все {valid_count} камер.")
+
+        for cam in cameras:
+            logger.info(f"  OK: {cam.Name} | {cam.MacAddress} | SSID: {cam.WifiSSID}")
+
+        return True
+
     async def _get_file_list(self, session):
         """Получение списка файлов (cmd=3015)"""
         url = f"{self.CAMERA_API_URL}?custom=1&cmd=3015"
@@ -497,12 +537,12 @@ class UnifiedCameraManager:
             db_config = await load_config(session)
         self._apply_config(db_config)
 
-        # ── Калибровка (фаза 1+2) ────────────────────────────────────────────
-        if self.config.get("NeedCalibration", False):
-            logger.info("Калибровка включена — запуск calibration.py")
-            await run_calibration()
-        else:
-            logger.info("Калибровка отключена — пропуск фаз 1+2")
+        # ── Проверка что камеры настроены ──────────────────────────────────────
+        async with self.async_session() as session:
+            cameras_ok = await self._validate_cameras(session)
+        if not cameras_ok:
+            logger.error("Камеры не настроены. Выполните калибровку вручную: python calibration.py")
+            return
 
         # ── Читаем активные камеры из БД ──────────────────────────────────────
         async with self.async_session() as session:

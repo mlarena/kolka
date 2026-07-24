@@ -22,8 +22,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, and_
 from bleak import BleakScanner, BleakClient
 
-from models import Base, PhotoTrap, SnapshotLog
-from calibration import run_calibration
+from models import Base, PhotoTrap, SnapshotLog, PhotoTrapConfig
 from config_loader import load_config
 
 # ── Логирование ───────────────────────────────────────────────────────────────
@@ -187,6 +186,47 @@ class SnapshotCameraManager:
         except Exception as e:
             logger.warning(f"HEALTH: {e}")
             return False
+
+    async def _validate_cameras(self, session) -> bool:
+        """Проверить что камеры настроены: MacAddress + WifiSSID заполнены, количество = CamerasCount"""
+        try:
+            result = await session.execute(
+                select(PhotoTrapConfig.Value).where(PhotoTrapConfig.Key == 'CamerasCount')
+            )
+            cameras_count_str = result.scalar_one_or_none()
+            expected_count = int(cameras_count_str) if cameras_count_str else 1
+        except Exception as e:
+            logger.warning(f"Не удалось прочитать CamerasCount из БД: {e}, ожидаем 1")
+            expected_count = 1
+
+        result = await session.execute(
+            select(PhotoTrap).where(
+                PhotoTrap.MacAddress.isnot(None),
+                PhotoTrap.WifiSSID.isnot(None)
+            )
+        )
+        cameras = result.scalars().all()
+        valid_count = len(cameras)
+
+        logger.info(f"Проверка камер: в БД с SSID={valid_count}, ожидается={expected_count}")
+
+        if valid_count == 0:
+            logger.error("В таблице PhotoTrap нет камер с заполненными MacAddress и WifiSSID")
+            return False
+
+        if valid_count < expected_count:
+            logger.error(f"Камер с SSID: {valid_count}, а нужно: {expected_count}. "
+                        f"Выполните калибровку: python calibration.py")
+            return False
+
+        if valid_count > expected_count:
+            logger.warning(f"Камер с SSID: {valid_count}, а в конфиге CamerasCount={expected_count}. "
+                          f"Будут обработаны все {valid_count} камер.")
+
+        for cam in cameras:
+            logger.info(f"  OK: {cam.Name} | {cam.MacAddress} | SSID: {cam.WifiSSID}")
+
+        return True
 
     async def _api_call(self, session, cmd: int, par=None, timeout=3) -> dict:
         """Отправить HTTP GET команду на камеру. Возвращает dict с тегами XML (включая вложенные)."""
@@ -352,10 +392,12 @@ class SnapshotCameraManager:
             db_config = await load_config(session)
         self._apply_config(db_config)
 
-        need_calibration = self.config.get("NeedCalibration", False)
-        if need_calibration:
-            logger.info("Калибровка включена")
-            await run_calibration()
+        # ── Проверка что камеры настроены ──────────────────────────────────────
+        async with self.async_session() as session:
+            cameras_ok = await self._validate_cameras(session)
+        if not cameras_ok:
+            logger.error("Камеры не настроены. Выполните калибровку вручную: python calibration.py")
+            return
 
         async with self.async_session() as session:
             result = await session.execute(
