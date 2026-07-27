@@ -118,6 +118,19 @@ VALUES ('CamerasCount', '2', 'Количество фотоловушек')
 ON CONFLICT ("Key") DO UPDATE SET "Value" = EXCLUDED."Value";
 ```
 
+### Ключевые параметры
+
+| Параметр | Значение | Описание |
+|----------|----------|----------|
+| `WifiConnectTimeout` | 90 | Таймаут подключения к Wi-Fi одной камеры (сек) |
+| `WifiMaxRetries` | 5 | Попыток подключения к Wi-Fi камеры |
+| `MaxRetriesPerCamera` | 3 | Попыток BLE open + Wi-Fi connect (внешний цикл) |
+| `WifiWaitAfterOpen` | 25 | Ожидание после BLE open перед Wi-Fi (сек) |
+| `BleScanTimeout` | 10 | Таймаут BLE-сканирования (сек) |
+| `BleCommandTimeout` | 10 | Таймаут BLE-подключения (сек) |
+| `CameraCooldown` | 20 | Пауза между камерами (сек) |
+| `WifiDownloadRetries` | 3 | Реконнектов Wi-Fi при обрыве загрузки |
+
 ## Калибровка
 
 Калибровка выполняется **вручную** перед первым запуском:

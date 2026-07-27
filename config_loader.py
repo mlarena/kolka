@@ -21,7 +21,8 @@ DEFAULTS = {
     "BleScanTimeout": "10",
     "BleCommandTimeout": "10",
     "WifiWaitAfterOpen": "25",
-    "WifiConnectTimeout": "45",
+    "WifiConnectTimeout": "90",
+    "WifiMaxRetries": "5",
     "CloseWaitSeconds": "25",
     "RetryDelay": "15",
     "MaxRetriesPerCamera": "3",
@@ -68,7 +69,7 @@ async def load_config(db_session: AsyncSession, config_path: str = "appsettings.
     int_keys = [
         "CamerasCount", "WifiWaitAfterOpen", "WifiConnectTimeout",
         "CloseWaitSeconds", "RetryDelay", "MaxRetriesPerCamera",
-        "MaxScanRetries", "CameraCooldown", "CompressQuality", "WifiDownloadRetries",
+        "MaxScanRetries", "CameraCooldown", "CompressQuality", "WifiDownloadRetries", "WifiMaxRetries",
     ]
     float_keys = ["BleScanTimeout", "BleCommandTimeout"]
 

@@ -75,7 +75,8 @@ class UnifiedCameraManager:
         self.ble_scan_timeout = float(self.config.get('BleScanTimeout', 10))
         self.ble_command_timeout = float(self.config.get('BleCommandTimeout', 10))
         self.wifi_wait_after_open = int(self.config.get('WifiWaitAfterOpen', 25))
-        self.wifi_connect_timeout = int(self.config.get('WifiConnectTimeout', 45))
+        self.wifi_connect_timeout = int(self.config.get('WifiConnectTimeout', 90))
+        self.wifi_max_retries = int(self.config.get('WifiMaxRetries', 5))
         self.close_wait_seconds = int(self.config.get('CloseWaitSeconds', 25))
         self.retry_delay = int(self.config.get('RetryDelay', 15))
         self.max_retries_per_camera = int(self.config.get('MaxRetriesPerCamera', 3))
@@ -95,7 +96,8 @@ class UnifiedCameraManager:
         self.ble_scan_timeout = float(config.get('BleScanTimeout', 10))
         self.ble_command_timeout = float(config.get('BleCommandTimeout', 10))
         self.wifi_wait_after_open = int(config.get('WifiWaitAfterOpen', 25))
-        self.wifi_connect_timeout = int(config.get('WifiConnectTimeout', 45))
+        self.wifi_connect_timeout = int(config.get('WifiConnectTimeout', 90))
+        self.wifi_max_retries = int(config.get('WifiMaxRetries', 5))
         self.close_wait_seconds = int(config.get('CloseWaitSeconds', 25))
         self.retry_delay = int(config.get('RetryDelay', 15))
         self.max_retries_per_camera = int(config.get('MaxRetriesPerCamera', 3))
@@ -218,7 +220,7 @@ class UnifiedCameraManager:
 
     def connect_to_wifi(self, ssid: str) -> tuple:
         """Подключение к Wi-Fi сети камеры через nmcli (WPA2PSK). Возвращает (success, attempts)."""
-        logger.info(f"Wi-Fi: Подключение к {ssid} (таймаут {self.wifi_connect_timeout} сек)...")
+        logger.info(f"Wi-Fi: Подключение к {ssid}...")
 
         # Отключаемся от текущей сети
         self._run_nmcli('connection', 'down', 'id', ssid)
@@ -244,28 +246,26 @@ class UnifiedCameraManager:
             return False, 0
         logger.info(f"Wi-Fi: Профиль '{ssid}' создан")
 
-        # Подключаемся
-        start_time = time.time()
-        attempt = 0
+        for attempt in range(1, self.wifi_max_retries + 1):
+            logger.info(f"Wi-Fi: Подключение к {ssid} (таймаут {self.wifi_connect_timeout} сек, попытка {attempt}/{self.wifi_max_retries})...")
+            start_time = time.time()
 
-        while time.time() - start_time < self.wifi_connect_timeout:
-            attempt += 1
-            self._run_nmcli('connection', 'up', 'id', ssid)
-            time.sleep(5)
+            while time.time() - start_time < self.wifi_connect_timeout:
+                self._run_nmcli('connection', 'up', 'id', ssid)
+                time.sleep(5)
 
-            # Проверяем подключение: NAME:DEVICE:STATE — точное совпадение NAME + activated
-            stdout, _, _ = self._run_nmcli('-t', '-f', 'NAME,DEVICE,STATE', 'connection', 'show', '--active')
-            for line in stdout.strip().split('\n'):
-                parts = line.split(':')
-                if len(parts) >= 3 and parts[0] == ssid and parts[2] == 'activated':
-                    logger.info(f"Wi-Fi: Подключено к {ssid} (попытка {attempt})")
-                    return True, attempt
+                stdout, _, _ = self._run_nmcli('-t', '-f', 'NAME,DEVICE,STATE', 'connection', 'show', '--active')
+                for line in stdout.strip().split('\n'):
+                    parts = line.split(':')
+                    if len(parts) >= 3 and parts[0] == ssid and parts[2] == 'activated':
+                        logger.info(f"Wi-Fi: Подключено к {ssid} (попытка {attempt})")
+                        return True, attempt
 
-            if attempt % 3 == 0:
-                logger.info(f"Wi-Fi: Попытка {attempt}...")
+            logger.warning(f"Wi-Fi: Не удалось подключиться к {ssid} за {self.wifi_connect_timeout} сек (попытка {attempt}/{self.wifi_max_retries})")
+            if attempt < self.wifi_max_retries:
+                time.sleep(5)
 
-        logger.warning(f"Wi-Fi: Не удалось подключиться к {ssid} за {self.wifi_connect_timeout} сек ({attempt} попыток)")
-        return False, attempt
+        return False, self.wifi_max_retries
 
     def disconnect_wifi(self):
         """Отключение от Wi-Fi: ищем активное wifi-подключение и отключаем его"""

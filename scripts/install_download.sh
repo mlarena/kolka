@@ -27,6 +27,9 @@ echo "[1/8] Остановка старого сервиса..."
 systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
 systemctl stop "${SERVICE_NAME}.timer" 2>/dev/null || true
 
+# Удаление старого stamp-файла от предыдущих установок
+rm -f /var/lib/systemd/timers/stamp-${SERVICE_NAME}.timer 2>/dev/null || true
+
 # ── 2. Создание рабочей директории ──────────────────────────────────────────
 echo "[2/8] Создание директории ${SERVICE_DIR}..."
 mkdir -p "${SERVICE_DIR}"
@@ -82,7 +85,6 @@ Description=Таймер скачивания фото (чётные часы)
 
 [Timer]
 OnCalendar=*-*-* 00,02,04,06,08,10,12,14,16,18,20,22:00
-Persistent=true
 RandomizedDelaySec=60
 
 [Install]

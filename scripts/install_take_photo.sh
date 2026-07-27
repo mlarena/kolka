@@ -27,6 +27,9 @@ echo "[1/8] Остановка старого сервиса..."
 systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
 systemctl stop "${SERVICE_NAME}.timer" 2>/dev/null || true
 
+# Удаление старого stamp-файла от предыдущих установок
+rm -f /var/lib/systemd/timers/stamp-${SERVICE_NAME}.timer 2>/dev/null || true
+
 # ── 2. Создание рабочей директории ──────────────────────────────────────────
 echo "[2/8] Создание директории ${SERVICE_DIR}..."
 mkdir -p "${SERVICE_DIR}"
@@ -90,7 +93,6 @@ Description=Таймер снимков с фотоловушек (нечётн�
 
 [Timer]
 OnCalendar=*-*-* 01,03,05,07,09,11,13,15,17,19,21,23:00
-Persistent=true
 RandomizedDelaySec=60
 
 [Install]

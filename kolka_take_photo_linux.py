@@ -77,7 +77,8 @@ class SnapshotCameraManager:
         self.ble_scan_timeout = float(self.config.get('BleScanTimeout', 10))
         self.ble_command_timeout = float(self.config.get('BleCommandTimeout', 10))
         self.wifi_wait_after_open = int(self.config.get('WifiWaitAfterOpen', 25))
-        self.wifi_connect_timeout = int(self.config.get('WifiConnectTimeout', 45))
+        self.wifi_connect_timeout = int(self.config.get('WifiConnectTimeout', 90))
+        self.wifi_max_retries = int(self.config.get('WifiMaxRetries', 5))
         self.retry_delay = int(self.config.get('RetryDelay', 15))
         self.max_retries_per_camera = int(self.config.get('MaxRetriesPerCamera', 3))
         self.camera_cooldown = int(self.config.get('CameraCooldown', 20))
@@ -88,7 +89,8 @@ class SnapshotCameraManager:
         self.ble_scan_timeout = float(config.get('BleScanTimeout', 10))
         self.ble_command_timeout = float(config.get('BleCommandTimeout', 10))
         self.wifi_wait_after_open = int(config.get('WifiWaitAfterOpen', 25))
-        self.wifi_connect_timeout = int(config.get('WifiConnectTimeout', 45))
+        self.wifi_connect_timeout = int(config.get('WifiConnectTimeout', 90))
+        self.wifi_max_retries = int(config.get('WifiMaxRetries', 5))
         self.retry_delay = int(config.get('RetryDelay', 15))
         self.max_retries_per_camera = int(config.get('MaxRetriesPerCamera', 3))
         self.camera_cooldown = int(config.get('CameraCooldown', 20))
@@ -216,21 +218,24 @@ class SnapshotCameraManager:
         if rc != 0:
             logger.error(f"Wi-Fi: Ошибка профиля '{ssid}': {stderr}")
             return False, 0
-        start = time.time()
-        attempt = 0
-        while time.time() - start < self.wifi_connect_timeout:
-            attempt += 1
-            self._run_nmcli('connection', 'up', 'id', ssid)
-            time.sleep(5)
-            # Проверяем: NAME:DEVICE:STATE — точное совпадение NAME + activated
-            stdout, _, _ = self._run_nmcli('-t', '-f', 'NAME,DEVICE,STATE', 'connection', 'show', '--active')
-            for line in stdout.strip().split('\n'):
-                parts = line.split(':')
-                if len(parts) >= 3 and parts[0] == ssid and parts[2] == 'activated':
-                    logger.info(f"Wi-Fi: Подключено к {ssid} (попытка {attempt})")
-                    return True, attempt
-        logger.warning(f"Wi-Fi: Не удалось подключиться к {ssid} ({attempt} попыток)")
-        return False, attempt
+
+        for attempt in range(1, self.wifi_max_retries + 1):
+            logger.info(f"Wi-Fi: Подключение к {ssid} (таймаут {self.wifi_connect_timeout} сек, попытка {attempt}/{self.wifi_max_retries})...")
+            start = time.time()
+            while time.time() - start < self.wifi_connect_timeout:
+                self._run_nmcli('connection', 'up', 'id', ssid)
+                time.sleep(5)
+                stdout, _, _ = self._run_nmcli('-t', '-f', 'NAME,DEVICE,STATE', 'connection', 'show', '--active')
+                for line in stdout.strip().split('\n'):
+                    parts = line.split(':')
+                    if len(parts) >= 3 and parts[0] == ssid and parts[2] == 'activated':
+                        logger.info(f"Wi-Fi: Подключено к {ssid} (попытка {attempt})")
+                        return True, attempt
+            logger.warning(f"Wi-Fi: Не удалось подключиться к {ssid} за {self.wifi_connect_timeout} сек (попытка {attempt}/{self.wifi_max_retries})")
+            if attempt < self.wifi_max_retries:
+                time.sleep(5)
+
+        return False, self.wifi_max_retries
 
     def disconnect_wifi(self):
         """Отключение от Wi-Fi: ищем активное wifi-подключение и отключаем его"""
@@ -419,7 +424,7 @@ class SnapshotCameraManager:
 
                 cycle_start = datetime.now()
                 logger.info(f"\n{'='*50}")
-                logger.info(f"ОНОШОТ-ЦИКЛ | {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}")
+                logger.info(f"ЦИКЛ | {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}")
                 logger.info(f"Камер: {len(cameras)}")
                 logger.info(f"{'='*50}")
 

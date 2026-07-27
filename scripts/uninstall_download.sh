@@ -23,6 +23,7 @@ systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
 systemctl stop "${SERVICE_NAME}.timer" 2>/dev/null || true
 systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
 systemctl disable "${SERVICE_NAME}.timer" 2>/dev/null || true
+rm -f /var/lib/systemd/timers/stamp-${SERVICE_NAME}.timer 2>/dev/null || true
 
 # ── 2. Удаление systemd-файлов ──────────────────────────────────────────────
 echo "[2/4] Удаление systemd конфигов..."
