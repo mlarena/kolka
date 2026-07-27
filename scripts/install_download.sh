@@ -1,6 +1,7 @@
 #!/bin/bash
 # ──────────────────────────────────────────────────────────────────────────────
-# Установка kolka_download (скачивание фото по timer, каждый час)
+# Установка kolka_download (скачивание фото по timer)
+# Расписание: чётные часы (00:00, 02:00, ..., 22:00)
 #
 # Использование:
 #   sudo bash install_download.sh
@@ -17,7 +18,8 @@ TIMER_FILE="/etc/systemd/system/${SERVICE_NAME}.timer"
 LOGROTATE_FILE="/etc/logrotate.d/${SERVICE_NAME}"
 
 echo "═══════════════════════════════════════════════════════════"
-echo "  Установка: ${SERVICE_NAME} (timer, каждый час)"
+echo "  Установка: ${SERVICE_NAME} (oneshot + timer)"
+echo "  Расписание: 00:00, 02:00, 04:00, ..., 22:00"
 echo "═══════════════════════════════════════════════════════════"
 
 # ── 1. Остановка старого сервиса если есть ───────────────────────────────────
@@ -37,13 +39,13 @@ cp "${SCANNER_DIR}/models.py"                "${SERVICE_DIR}/models.py"
 cp "${SCANNER_DIR}/config_loader.py"         "${SERVICE_DIR}/config_loader.py"
 cp "${SCANNER_DIR}/compress_images.py"       "${SERVICE_DIR}/compress_images.py"
 cp "${SCANNER_DIR}/appsettings.json"         "${SERVICE_DIR}/appsettings.json"
-cp "${SCANNER_DIR}/requirements_linux.txt"   "${SERVICE_DIR}/requirements.txt"
+cp "${SCANNER_DIR}/requirements.txt"          "${SERVICE_DIR}/requirements.txt"
 
 # ── 4. Создание виртуального окружения ──────────────────────────────────────
 echo "[4/8] Создание виртуального окружения..."
 python3 -m venv "${VENV_DIR}"
 "${VENV_DIR}/bin/pip" install --upgrade pip
-"${VENV_DIR}/bin/pip" install -r "${SERVICE_DIR}/requirements.txt"
+"${VENV_DIR}/bin/pip" install --upgrade -r "${SERVICE_DIR}/requirements.txt"
 
 # ── 5. Создание systemd service (oneshot) ───────────────────────────────────
 echo "[5/8] Создание systemd service (oneshot)..."
@@ -73,15 +75,15 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 UNIT
 
 # ── 6. Создание systemd timer (каждый час) ──────────────────────────────────
-echo "[6/8] Создание systemd timer (каждый час)..."
+echo "[6/8] Создание systemd timer (чётные часы)..."
 cat > "${TIMER_FILE}" << 'TIMER'
 [Unit]
-Description=Таймер скачивания фото (каждый час)
+Description=Таймер скачивания фото (чётные часы)
 
 [Timer]
-OnCalendar=*-*-* *:00
+OnCalendar=*-*-* 00,02,04,06,08,10,12,14,16,18,20,22:00
 Persistent=true
-RandomizedDelaySec=120
+RandomizedDelaySec=60
 
 [Install]
 WantedBy=timers.target
@@ -110,8 +112,11 @@ systemctl start "${SERVICE_NAME}.timer"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════"
-echo "  ${SERVICE_NAME} установлен"
+echo "  ${SERVICE_NAME} установлен (oneshot + timer, чётные часы)"
 echo "═══════════════════════════════════════════════════════════"
+echo ""
+echo "Расписание: 00:00, 02:00, 04:00, 06:00, 08:00, 10:00,"
+echo "            12:00, 14:00, 16:00, 18:00, 20:00, 22:00"
 echo ""
 echo "Таймер:"
 echo "  Статус:      sudo systemctl status ${SERVICE_NAME}.timer"

@@ -29,7 +29,6 @@ DEFAULTS = {
     "CameraCooldown": "20",
     "CompressQuality": "12",
     "WifiDownloadRetries": "3",
-    "SnapshotIntervalMinutes": "30",
     "DeleteAfterDownload": "true",
     "CompressAfterDownload": "true",
 }

@@ -535,45 +535,8 @@ class UnifiedCameraManager:
             logger.error(f"API cmd=4003: ошибка - {e}")
             return False
 
-    TAKE_PHOTO_SERVICE = "kolka_take_photo"
-
-    def _stop_take_photo_service(self):
-        """Остановить сервис kolka_take_photo"""
-        try:
-            result = subprocess.run(
-                ['systemctl', 'is-active', self.TAKE_PHOTO_SERVICE],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.stdout.strip() == 'active':
-                logger.info(f"Останавливаю {self.TAKE_PHOTO_SERVICE}...")
-                subprocess.run(
-                    ['systemctl', 'stop', self.TAKE_PHOTO_SERVICE],
-                    capture_output=True, timeout=30
-                )
-                time.sleep(3)  # Даём BLE/Wi-Fi освободиться
-                logger.info(f"{self.TAKE_PHOTO_SERVICE} остановлен")
-            else:
-                logger.info(f"{self.TAKE_PHOTO_SERVICE} уже не активен")
-        except Exception as e:
-            logger.warning(f"Не удалось остановить {self.TAKE_PHOTO_SERVICE}: {e}")
-
-    def _start_take_photo_service(self):
-        """Запустить сервис kolka_take_photo"""
-        try:
-            logger.info(f"Запускаю {self.TAKE_PHOTO_SERVICE}...")
-            subprocess.run(
-                ['systemctl', 'start', self.TAKE_PHOTO_SERVICE],
-                capture_output=True, timeout=30
-            )
-            logger.info(f"{self.TAKE_PHOTO_SERVICE} запущен")
-        except Exception as e:
-            logger.warning(f"Не удалось запустить {self.TAKE_PHOTO_SERVICE}: {e}")
-
     async def run(self):
         await self.init_db()
-
-        # ── Останавливаем kolka_take_photo (конфликт BLE/Wi-Fi) ──────────────
-        self._stop_take_photo_service()
 
         try:
             # ── Перезагрузка конфигурации из БД ───────────────────────────────
@@ -757,8 +720,6 @@ class UnifiedCameraManager:
         except Exception as e:
             logger.error(f"Ошибка в run(): {e}", exc_info=True)
         finally:
-            # ── Запускаем kolka_take_photo обратно ─────────────────────────────
-            self._start_take_photo_service()
             await self.engine.dispose()
             logger.info("Ресурсы освобождены")
 

@@ -11,10 +11,11 @@ import logging
 import signal
 import sys
 import os
-from logging.handlers import TimedRotatingFileHandler
+import fcntl
 import json
 import subprocess
 import time
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from datetime import datetime
 from lxml import etree
@@ -80,7 +81,6 @@ class SnapshotCameraManager:
         self.retry_delay = int(self.config.get('RetryDelay', 15))
         self.max_retries_per_camera = int(self.config.get('MaxRetriesPerCamera', 3))
         self.camera_cooldown = int(self.config.get('CameraCooldown', 20))
-        self.snapshot_interval = int(self.config.get('SnapshotIntervalMinutes', 30))
 
     def _apply_config(self, config: dict):
         self.config = config
@@ -92,7 +92,6 @@ class SnapshotCameraManager:
         self.retry_delay = int(config.get('RetryDelay', 15))
         self.max_retries_per_camera = int(config.get('MaxRetriesPerCamera', 3))
         self.camera_cooldown = int(config.get('CameraCooldown', 20))
-        self.snapshot_interval = int(config.get('SnapshotIntervalMinutes', 30))
 
     def _detect_wifi_interface(self) -> str:
         """Найти имя WiFi интерфейса через nmcli"""
@@ -164,23 +163,6 @@ class SnapshotCameraManager:
             )
         )
         return result.scalars().all()
-
-    async def _wait_with_shutdown(self, session, seconds: int):
-        """Ожидание с проверкой SIGTERM каждые 60 сек и перечитыванием конфига"""
-        waited = 0
-        while waited < seconds and not shutdown_event.is_set():
-            chunk = min(60, seconds - waited)
-            try:
-                await asyncio.wait_for(shutdown_event.wait(), timeout=chunk)
-                break
-            except asyncio.TimeoutError:
-                waited += chunk
-                # Перечитываем конфиг и камеры
-                try:
-                    db_config = await load_config(session)
-                    self._apply_config(db_config)
-                except Exception as e:
-                    logger.warning(f"Ошибка перечитывания конфига: {e}")
 
     def _convert_connection_string(self, conn_string: str) -> str:
         params = {part.split('=')[0].strip(): part.split('=')[1].strip()
@@ -429,42 +411,30 @@ class SnapshotCameraManager:
                     logger.error("Камеры не настроены. Выполните калибровку: python calibration.py")
                     return
 
-                logger.info(f"\nИнтервал снимков: {self.snapshot_interval} мин")
-                logger.info("=" * 50)
+                # ── Один цикл снимков (oneshot) ────────────────────────────────
+                cameras = await self._load_cameras(session)
+                if not cameras:
+                    logger.warning("Нет активных камер")
+                    return
 
-                cycle = 0
-                while not shutdown_event.is_set():
-                    cycle += 1
-                    cycle_start = datetime.now()
-                    logger.info(f"\n{'='*50}")
-                    logger.info(f"ЦИКЛ #{cycle} | {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}")
-                    logger.info(f"{'='*50}")
+                cycle_start = datetime.now()
+                logger.info(f"\n{'='*50}")
+                logger.info(f"ОНОШОТ-ЦИКЛ | {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}")
+                logger.info(f"Камер: {len(cameras)}")
+                logger.info(f"{'='*50}")
 
-                    # Перечитываем камеры в каждом цикле (IsActive может измениться)
-                    cameras = await self._load_cameras(session)
-                    if not cameras:
-                        logger.warning("Нет активных камер, ждём 5 мин...")
-                        await self._wait_with_shutdown(session, 300)
-                        continue
-
-                    for cam in cameras:
-                        if shutdown_event.is_set():
-                            break
-                        if not cam.WifiSSID:
-                            logger.info(f"[{cam.MacAddress}] Пропуск — нет SSID")
-                            continue
-                        await self.make_snapshot(cam, cycle)
-                        if cam != cameras[-1]:
-                            await asyncio.sleep(self.camera_cooldown)
-
+                for cam in cameras:
                     if shutdown_event.is_set():
                         break
+                    if not cam.WifiSSID:
+                        logger.info(f"[{cam.MacAddress}] Пропуск — нет SSID")
+                        continue
+                    await self.make_snapshot(cam, 1)
+                    if cam != cameras[-1]:
+                        await asyncio.sleep(self.camera_cooldown)
 
-                    elapsed = (datetime.now() - cycle_start).total_seconds()
-                    wait = max(0, self.snapshot_interval * 60 - elapsed)
-                    logger.info(f"\nЦикл #{cycle} завершён за {elapsed:.0f} сек. Следующий через {wait:.0f} сек ({wait/60:.1f} мин)")
-
-                    await self._wait_with_shutdown(session, wait)
+                elapsed = (datetime.now() - cycle_start).total_seconds()
+                logger.info(f"\nЦикл завершён за {elapsed:.0f} сек")
 
         except Exception as e:
             logger.error(f"Ошибка в run(): {e}", exc_info=True)
@@ -474,5 +444,25 @@ class SnapshotCameraManager:
 
 
 if __name__ == "__main__":
-    manager = SnapshotCameraManager()
-    asyncio.run(manager.run())
+    SCRIPT_DIR = Path(__file__).resolve().parent
+    LOCK_FILE = SCRIPT_DIR / "service.lock"
+
+    lock_fd = open(LOCK_FILE, 'w')
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_fd.write(str(os.getpid()))
+        lock_fd.flush()
+    except IOError:
+        print("Процесс уже запущен, пропуск.")
+        sys.exit(0)
+
+    try:
+        manager = SnapshotCameraManager()
+        asyncio.run(manager.run())
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+        try:
+            os.unlink(LOCK_FILE)
+        except OSError:
+            pass

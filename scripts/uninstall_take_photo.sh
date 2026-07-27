@@ -10,6 +10,7 @@ set -euo pipefail
 SERVICE_NAME="kolka_take_photo"
 SERVICE_DIR="/opt/kolka_service_take_photo"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+TIMER_FILE="/etc/systemd/system/${SERVICE_NAME}.timer"
 LOGROTATE_FILE="/etc/logrotate.d/${SERVICE_NAME}"
 
 echo "═══════════════════════════════════════════════════════════"
@@ -19,11 +20,14 @@ echo "════════════════════════�
 # ── 1. Остановка и отключение ───────────────────────────────────────────────
 echo "[1/4] Остановка..."
 systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
+systemctl stop "${SERVICE_NAME}.timer" 2>/dev/null || true
 systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
+systemctl disable "${SERVICE_NAME}.timer" 2>/dev/null || true
 
-# ── 2. Удаление systemd-файла ───────────────────────────────────────────────
-echo "[2/4] Удаление systemd конфига..."
+# ── 2. Удаление systemd-файлов ──────────────────────────────────────────────
+echo "[2/4] Удаление systemd конфигов..."
 rm -f "${SERVICE_FILE}"
+rm -f "${TIMER_FILE}"
 systemctl daemon-reload
 
 # ── 3. Удаление logrotate ───────────────────────────────────────────────────

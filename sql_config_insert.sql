@@ -15,6 +15,5 @@ INSERT INTO "PhotoTrapConfig" ("Key", "Value", "Description") VALUES
 ('CameraCooldown', '20', 'Пауза между разными камерами (сек)'),
 ('CompressQuality', '12', 'Качество сжатия ffmpeg -q:v (1-31, чем меньше тем лучше)'),
 ('WifiDownloadRetries', '3', 'Попыток реконнекта Wi-Fi при обрыве во время загрузки файлов'),
-('SnapshotIntervalMinutes', '30', 'Интервал между снимками (минуты)'),
 ('DeleteAfterDownload', 'true', 'Удалять фото с камеры после загрузки (true/false)'),
 ('CompressAfterDownload', 'true', 'Сжимать изображения после загрузки (true/false)');

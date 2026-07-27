@@ -2,10 +2,10 @@
 
 ## Сервисы
 
-| Сервис | Тип | Назначение | Интервал |
-|--------|-----|-----------|----------|
-| `kolka_take_photo` | Долгоживущий сервис | Снимки по расписанию | Каждые N мин (из конфига) |
-| `kolka_download` | Timer + oneshot | Скачивание фото | Каждый час |
+| Сервис | Тип | Назначение | Расписание |
+|--------|-----|-----------|------------|
+| `kolka_take_photo` | Timer + oneshot | Снимки | Нечётные часы: 01:00, 03:00, ..., 23:00 |
+| `kolka_download` | Timer + oneshot | Скачивание фото | Чётные часы: 00:00, 02:00, ..., 22:00 |
 
 ## Установка
 
@@ -21,20 +21,23 @@ sudo bash scripts/install_take_photo.sh
 sudo bash scripts/install_download.sh
 ```
 
-## Управление kolka_take_photo (сервис)
+## Управление kolka_take_photo (timer)
 
 ```bash
-# Статус
-sudo systemctl status kolka_take_photo
+# Статус таймера
+sudo systemctl status kolka_take_photo.timer
+sudo systemctl list-timers kolka_take_photo.timer
 
-# Запуск / Остановка / Перезапуск
+# Ручной запуск снимков
 sudo systemctl start kolka_take_photo
-sudo systemctl stop kolka_take_photo
-sudo systemctl restart kolka_take_photo
 
-# Автозапуск
-sudo systemctl enable kolka_take_photo
-sudo systemctl disable kolka_take_photo
+# Остановка таймера
+sudo systemctl stop kolka_take_photo.timer
+sudo systemctl disable kolka_take_photo.timer
+
+# Включение таймера
+sudo systemctl enable kolka_take_photo.timer
+sudo systemctl start kolka_take_photo.timer
 ```
 
 ## Управление kolka_download (timer)
@@ -109,11 +112,6 @@ sudo bash uninstall_download.sh
 
 Изменить конфиг можно через БД:
 ```sql
--- Интервал снимков (15 мин)
-INSERT INTO "PhotoTrapConfig" ("Key", "Value", "Description")
-VALUES ('SnapshotIntervalMinutes', '15', 'Интервал снимков в минутах')
-ON CONFLICT ("Key") DO UPDATE SET "Value" = EXCLUDED."Value";
-
 -- Количество камер
 INSERT INTO "PhotoTrapConfig" ("Key", "Value", "Description")
 VALUES ('CamerasCount', '2', 'Количество фотоловушек')
