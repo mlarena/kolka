@@ -41,6 +41,7 @@ class SnapshotLog(Base):
 
     Id = Column(Integer, primary_key=True, autoincrement=True)
     PhotoTrapId = Column(Integer, ForeignKey('PhotoTrap.Id', ondelete='CASCADE'), nullable=False)
+    ActivityType = Column(String(20), nullable=False, default='photo')
     CycleNumber = Column(Integer)
     StartTime = Column(TIMESTAMP, nullable=False)
     EndTime = Column(TIMESTAMP)
@@ -54,6 +55,7 @@ Index('idx_snaplog_phototrapid', SnapshotLog.PhotoTrapId)
 Index('idx_snaplogstarttime', SnapshotLog.StartTime)
 Index('idx_snaplog_status', SnapshotLog.Status)
 Index('idx_snaplog_createdat', SnapshotLog.CreatedAt)
+Index('idx_snaplog_activitytype', SnapshotLog.ActivityType)
 
 
 class DownloadLog(Base):

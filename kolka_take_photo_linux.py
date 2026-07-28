@@ -350,7 +350,7 @@ class SnapshotCameraManager:
         snap_file = None
 
         async with self.async_session() as session:
-            snap_log = SnapshotLog(PhotoTrapId=cam.Id, CycleNumber=cycle_number, StartTime=snap_start, Status='PENDING')
+            snap_log = SnapshotLog(PhotoTrapId=cam.Id, CycleNumber=cycle_number, StartTime=snap_start, Status='PENDING', ActivityType='photo')
             session.add(snap_log)
             await session.commit()
             await session.refresh(snap_log)

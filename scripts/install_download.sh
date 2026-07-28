@@ -23,7 +23,7 @@ echo "  Расписание: 00:00, 02:00, 04:00, ..., 22:00"
 echo "═══════════════════════════════════════════════════════════"
 
 # ── 1. Остановка старого сервиса если есть ───────────────────────────────────
-echo "[1/8] Остановка старого сервиса..."
+echo "[1/9] Остановка старого сервиса..."
 systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
 systemctl stop "${SERVICE_NAME}.timer" 2>/dev/null || true
 
@@ -31,12 +31,12 @@ systemctl stop "${SERVICE_NAME}.timer" 2>/dev/null || true
 rm -f /var/lib/systemd/timers/stamp-${SERVICE_NAME}.timer 2>/dev/null || true
 
 # ── 2. Создание рабочей директории ──────────────────────────────────────────
-echo "[2/8] Создание директории ${SERVICE_DIR}..."
+echo "[2/9] Создание директории ${SERVICE_DIR}..."
 mkdir -p "${SERVICE_DIR}"
 mkdir -p "${LOG_DIR}"
 
 # ── 3. Копирование файлов ───────────────────────────────────────────────────
-echo "[3/8] Копирование файлов..."
+echo "[3/9] Копирование файлов..."
 cp "${SCANNER_DIR}/kolka_download_linux.py"  "${SERVICE_DIR}/kolka_download.py"
 cp "${SCANNER_DIR}/models.py"                "${SERVICE_DIR}/models.py"
 cp "${SCANNER_DIR}/config_loader.py"         "${SERVICE_DIR}/config_loader.py"
@@ -45,13 +45,13 @@ cp "${SCANNER_DIR}/appsettings.json"         "${SERVICE_DIR}/appsettings.json"
 cp "${SCANNER_DIR}/requirements.txt"          "${SERVICE_DIR}/requirements.txt"
 
 # ── 4. Создание виртуального окружения ──────────────────────────────────────
-echo "[4/8] Создание виртуального окружения..."
+echo "[4/9] Создание виртуального окружения..."
 python3 -m venv "${VENV_DIR}"
 "${VENV_DIR}/bin/pip" install --upgrade pip
 "${VENV_DIR}/bin/pip" install --upgrade -r "${SERVICE_DIR}/requirements.txt"
 
 # ── 5. Создание systemd service (oneshot) ───────────────────────────────────
-echo "[5/8] Создание systemd service (oneshot)..."
+echo "[5/9] Создание systemd service (oneshot)..."
 cat > "${SERVICE_FILE}" << 'UNIT'
 [Unit]
 Description=Kolka Download — скачивание фото с фотоловушек
@@ -78,7 +78,7 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 UNIT
 
 # ── 6. Создание systemd timer (каждый час) ──────────────────────────────────
-echo "[6/8] Создание systemd timer (чётные часы)..."
+echo "[6/9] Создание systemd timer (чётные часы)..."
 cat > "${TIMER_FILE}" << 'TIMER'
 [Unit]
 Description=Таймер скачивания фото (чётные часы)
@@ -86,13 +86,14 @@ Description=Таймер скачивания фото (чётные часы)
 [Timer]
 OnCalendar=*-*-* 00,02,04,06,08,10,12,14,16,18,20,22:00
 RandomizedDelaySec=60
+Persistent=true
 
 [Install]
 WantedBy=timers.target
 TIMER
 
 # ── 7. Настройка ротации логов ──────────────────────────────────────────────
-echo "[7/8] Настройка ротации логов..."
+echo "[7/9] Настройка ротации логов..."
 cat > "${LOGROTATE_FILE}" << 'LOGROTATE'
 /opt/kolka_service_download/logs/*.log {
     daily
@@ -107,9 +108,12 @@ cat > "${LOGROTATE_FILE}" << 'LOGROTATE'
 LOGROTATE
 
 # ── 8. Активация ────────────────────────────────────────────────────────────
-echo "[8/8] Активация..."
+echo "[8/9] Активация..."
 systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}.timer"
+
+# ── 9. Запуск таймера ──────────────────────────────────────────────────────
+echo "[9/9] Запуск таймера..."
 systemctl start "${SERVICE_NAME}.timer"
 
 echo ""

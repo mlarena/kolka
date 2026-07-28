@@ -1,0 +1,104 @@
+2026-07-28 08:37:35,622 - INFO - Лог-файл: logs/take_photo_log_2026-07-28.log
+2026-07-28 08:37:35,648 - INFO - Wi-Fi интерфейс: wlo1
+2026-07-28 08:37:35,801 - INFO - База данных инициализирована
+2026-07-28 08:37:35,820 - INFO - Проверка камер: в БД с SSID=2, ожидается=2
+2026-07-28 08:37:35,820 - INFO -   OK: GCBT40 | FF:FF:FF:10:84:11 | SSID: CAM_80f2
+2026-07-28 08:37:35,820 - INFO -   OK: GCBT40 | FF:FF:FF:10:FD:CD | SSID: CAM_d713
+2026-07-28 08:37:35,823 - INFO - 
+==================================================
+2026-07-28 08:37:35,823 - INFO - ЦИКЛ | 2026-07-28 08:37:35
+2026-07-28 08:37:35,823 - INFO - Камер: 2
+2026-07-28 08:37:35,824 - INFO - ==================================================
+2026-07-28 08:37:35,904 - INFO - BLE: Поиск FF:FF:FF:10:84:11...
+2026-07-28 08:37:37,886 - INFO - BLE: 'open' → FF:FF:FF:10:84:11
+2026-07-28 08:38:05,181 - INFO - Wi-Fi: Подключение к CAM_80f2...
+2026-07-28 08:38:07,270 - INFO - Wi-Fi: Подключение к CAM_80f2 (таймаут 35 сек, попытка 1/5)...
+2026-07-28 08:38:17,105 - INFO - Wi-Fi: Подключено к CAM_80f2 (попытка 1)
+2026-07-28 08:38:17,254 - INFO - HEALTH: камера доступна
+2026-07-28 08:38:17,267 - INFO - API cmd=3036: ответ: <?xml version="1.0" encoding="UTF-8" ?>
+<Function>
+<Cmd>3036</Cmd>
+<Status>0</Status>
+</Function>
+2026-07-28 08:38:17,276 - INFO - API cmd=2024: ответ: <?xml version="1.0" encoding="UTF-8" ?>
+<Function>
+<Cmd>2024</Cmd>
+<Status>0</Status>
+<Value>1</Value>
+</Function>
+2026-07-28 08:38:17,277 - INFO - Переключение в режим фото (cmd=3001&par=0)
+2026-07-28 08:38:17,724 - INFO - API cmd=3001: ответ: <?xml version="1.0" encoding="UTF-8" ?>
+<Function>
+<Cmd>3001</Cmd>
+<Status>0</Status>
+</Function>
+2026-07-28 08:38:17,725 - INFO - Создание снимка (cmd=1001, таймаут 10 сек)...
+2026-07-28 08:38:19,718 - INFO - API cmd=1001: ответ: <?xml version="1.0" encoding="UTF-8" ?>
+<Function>
+<Cmd>1001</Cmd>
+<Status>0</Status>
+<File>
+<NAME>2026-0728-083845_000007.JPG</NAME>
+<FPATH>A:\DCIM\PHOTO\2026-0728-083845_000007.JPG</FPATH></File>
+<FREEPICNUM>4903</FREEPICNUM>
+</Function>
+
+2026-07-28 08:38:19,718 - INFO - Снимок выполнен (Status=0, File=2026-0728-083845_000007.JPG)
+2026-07-28 08:38:19,719 - INFO - Возврат в режим фото (cmd=3001&par=0)
+2026-07-28 08:38:19,733 - INFO - API cmd=3001: ответ: <?xml version="1.0" encoding="UTF-8" ?>
+<Function>
+<Cmd>3001</Cmd>
+<Status>0</Status>
+</Function>
+2026-07-28 08:38:19,734 - INFO - BLE: Поиск FF:FF:FF:10:84:11...
+2026-07-28 08:38:21,402 - INFO - BLE: 'close' → FF:FF:FF:10:84:11
+2026-07-28 08:38:26,013 - INFO - Wi-Fi: Отключение от 'CAM_80f2'...
+2026-07-28 08:38:26,896 - INFO - [FF:FF:FF:10:84:11] BLE open: 1/8, Wi-Fi connect: 1 | OK
+2026-07-28 08:38:46,935 - INFO - BLE: Поиск FF:FF:FF:10:FD:CD...
+2026-07-28 08:38:48,850 - INFO - BLE: 'open' → FF:FF:FF:10:FD:CD
+2026-07-28 08:39:16,139 - INFO - Wi-Fi: Подключение к CAM_d713...
+2026-07-28 08:39:18,231 - INFO - Wi-Fi: Подключение к CAM_d713 (таймаут 35 сек, попытка 1/5)...
+2026-07-28 08:39:28,656 - INFO - Wi-Fi: Подключено к CAM_d713 (попытка 1)
+2026-07-28 08:39:28,679 - INFO - HEALTH: камера доступна
+2026-07-28 08:39:28,687 - INFO - API cmd=3036: ответ: <?xml version="1.0" encoding="UTF-8" ?>
+<Function>
+<Cmd>3036</Cmd>
+<Status>0</Status>
+</Function>
+2026-07-28 08:39:28,696 - INFO - API cmd=2024: ответ: <?xml version="1.0" encoding="UTF-8" ?>
+<Function>
+<Cmd>2024</Cmd>
+<Status>0</Status>
+<Value>1</Value>
+</Function>
+2026-07-28 08:39:28,696 - INFO - Переключение в режим фото (cmd=3001&par=0)
+2026-07-28 08:39:29,160 - INFO - API cmd=3001: ответ: <?xml version="1.0" encoding="UTF-8" ?>
+<Function>
+<Cmd>3001</Cmd>
+<Status>0</Status>
+</Function>
+2026-07-28 08:39:29,161 - INFO - Создание снимка (cmd=1001, таймаут 10 сек)...
+2026-07-28 08:39:30,680 - INFO - API cmd=1001: ответ: <?xml version="1.0" encoding="UTF-8" ?>
+<Function>
+<Cmd>1001</Cmd>
+<Status>0</Status>
+<File>
+<NAME>2026-0728-083938_000003.JPG</NAME>
+<FPATH>A:\DCIM\PHOTO\2026-0728-083938_000003.JPG</FPATH></File>
+<FREEPICNUM>4768</FREEPICNUM>
+</Function>
+
+2026-07-28 08:39:30,681 - INFO - Снимок выполнен (Status=0, File=2026-0728-083938_000003.JPG)
+2026-07-28 08:39:30,681 - INFO - Возврат в режим фото (cmd=3001&par=0)
+2026-07-28 08:39:30,694 - INFO - API cmd=3001: ответ: <?xml version="1.0" encoding="UTF-8" ?>
+<Function>
+<Cmd>3001</Cmd>
+<Status>0</Status>
+</Function>
+2026-07-28 08:39:30,695 - INFO - BLE: Поиск FF:FF:FF:10:FD:CD...
+2026-07-28 08:39:32,410 - INFO - BLE: 'close' → FF:FF:FF:10:FD:CD
+2026-07-28 08:39:37,000 - INFO - Wi-Fi: Отключение от 'CAM_d713'...
+2026-07-28 08:39:37,801 - INFO - [FF:FF:FF:10:FD:CD] BLE open: 1/8, Wi-Fi connect: 1 | OK
+2026-07-28 08:39:37,802 - INFO - 
+Цикл завершён за 122 сек
+2026-07-28 08:39:37,810 - INFO - Ресурсы освобождены

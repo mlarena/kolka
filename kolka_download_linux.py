@@ -405,6 +405,7 @@ class UnifiedCameraManager:
                                 upd.IsDeleted = deleted if self.delete_after_download else False
                                 upd.ErrorMessage = None
                                 upd.LocalPath = str(local_path)
+                                upd.DownloadedAt = datetime.now()
                                 await db_session.commit()
                             skipped += 1
                             continue
@@ -428,6 +429,7 @@ class UnifiedCameraManager:
                                     upd.IsDeleted = deleted
                                     upd.ErrorMessage = None
                                     upd.LocalPath = str(local_path)
+                                    upd.DownloadedAt = datetime.now()
                                     await db_session.commit()
                             else:
                                 actual_size = local_path.stat().st_size if local_path.exists() else 0
@@ -570,6 +572,13 @@ class UnifiedCameraManager:
             for cam in cameras:
                 logger.info(f"  {cam.Name} | {cam.MacAddress} | SSID: {cam.WifiSSID}")
 
+            # ── Установка прав на папку загрузки ──────────────────────────────
+            try:
+                os.chmod(self.download_dir, 0o777)
+                logger.info(f"chmod 777 {self.download_dir}")
+            except Exception as e:
+                logger.warning(f"Не удалось установить права на {self.download_dir}: {e}")
+
             # ============================
             # ФАЗА 3: Скачивание файлов
             # ============================
@@ -595,6 +604,7 @@ class UnifiedCameraManager:
                         CycleNumber=1,
                         StartTime=daily_start,
                         Status='PENDING',
+                        ActivityType='download',
                     )
                     session.add(daily_log_entry)
                     await session.commit()
