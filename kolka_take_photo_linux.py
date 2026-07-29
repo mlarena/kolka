@@ -15,7 +15,6 @@ import fcntl
 import json
 import subprocess
 import time
-from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from datetime import datetime
 from lxml import etree
@@ -40,13 +39,13 @@ signal.signal(signal.SIGINT, _handle_signal)
 # ── Логирование ───────────────────────────────────────────────────────────────
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
-log_filename = f"take_photo_log_{datetime.now().strftime('%Y-%m-%d')}.log"
+log_filename = f"take_photo_log_{datetime.now().strftime('%Y-%m-%d_%H')}.log"
 log_path = log_dir / log_filename
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        TimedRotatingFileHandler(log_path, when='midnight', interval=1, encoding='utf-8'),
+        logging.FileHandler(log_path, encoding='utf-8'),
         logging.StreamHandler()
     ]
 )

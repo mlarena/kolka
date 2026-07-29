@@ -33,7 +33,7 @@ from config_loader import load_config
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
 start_time = datetime.now()
-log_filename = f"download_log_{start_time.strftime('%Y%m%d')}.log"
+log_filename = f"download_log_{start_time.strftime('%Y-%m-%d_%H')}.log"
 log_path = log_dir / log_filename
 logging.basicConfig(
     level=logging.INFO,
