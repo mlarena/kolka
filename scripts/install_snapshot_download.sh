@@ -42,6 +42,7 @@ cp "${SCANNER_DIR}/models.py"                      "${SERVICE_DIR}/models.py"
 cp "${SCANNER_DIR}/config_loader.py"               "${SERVICE_DIR}/config_loader.py"
 cp "${SCANNER_DIR}/appsettings.json"               "${SERVICE_DIR}/appsettings.json"
 cp "${SCANNER_DIR}/requirements.txt"               "${SERVICE_DIR}/requirements.txt"
+cp "${SCANNER_DIR}/compress_images.py"             "${SERVICE_DIR}/compress_images.py"
 
 # ── 4. Создание виртуального окружения ──────────────────────────────────────
 echo "[4/9] Создание виртуального окружения..."
@@ -80,10 +81,10 @@ UNIT
 echo "[6/9] Создание systemd timer (08:00–15:00)..."
 cat > "${TIMER_FILE}" << 'TIMER'
 [Unit]
-Description=Таймер снимка и загрузки (08:00–15:00 каждый час)
+Description=Таймер снимка и загрузки (каждый час)
 
 [Timer]
-OnCalendar=*-*-* 08,09,10,11,12,13,14,15:00
+OnCalendar=*-*-* 00,01,02,03,04,05,06,07,08,09,10,11,12,13,14,15,16,17,18,19,20,21,22,23:00
 RandomizedDelaySec=60
 Persistent=false
 

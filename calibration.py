@@ -268,45 +268,69 @@ _WIFI_PROFILE_TEMPLATE = """\
 CHARACTERISTIC_UUID = "0000ff11-0000-1000-8000-00805f9b34fb"
 
 
+def reset_ble_adapter():
+    """Сбросить BLE-адаптер, чтобы снять состояние 'Operation already in progress'."""
+    try:
+        subprocess.run(['hciconfig', 'hci0', 'down'], capture_output=True, timeout=5)
+        time.sleep(1)
+        subprocess.run(['hciconfig', 'hci0', 'up'], capture_output=True, timeout=5)
+        time.sleep(2)
+        logger.info("BLE: адаптер сброшен (hci0 down/up)")
+    except Exception as e:
+        logger.warning("BLE: не удалось сбросить адаптер: %s", e)
+
+
 async def ble_send_command(mac_address: str, command: str, scan_timeout: float = 10,
                            cmd_timeout: float = 10) -> bool:
     """Отправка BLE-команды (open/close) на камеру."""
     logger.info("BLE: поиск %s...", mac_address)
-    try:
-        device = await BleakScanner.find_device_by_address(mac_address, timeout=scan_timeout)
-        if not device:
-            logger.warning("BLE: %s не найден (таймаут %s сек)", mac_address, scan_timeout)
-            return False
-
-        from bleak import BleakClient
-        logger.info("BLE: %s найден (%s). Отправка '%s'...", mac_address, device.name, command)
+    for attempt in range(2):
         try:
-            async with BleakClient(device, timeout=cmd_timeout) as client:
-                await client.write_gatt_char(CHARACTERISTIC_UUID, command.encode())
-                logger.info("BLE: '%s' отправлена на %s", command, mac_address)
-                return True
+            device = await BleakScanner.find_device_by_address(mac_address, timeout=scan_timeout)
+            if not device:
+                logger.warning("BLE: %s не найден (таймаут %s сек)", mac_address, scan_timeout)
+                return False
+
+            from bleak import BleakClient
+            logger.info("BLE: %s найден (%s). Отправка '%s'...", mac_address, device.name, command)
+            try:
+                async with BleakClient(device, timeout=cmd_timeout) as client:
+                    await client.write_gatt_char(CHARACTERISTIC_UUID, command.encode())
+                    logger.info("BLE: '%s' отправлена на %s", command, mac_address)
+                    return True
+            except asyncio.CancelledError:
+                logger.warning("BLE: таймаут подключения к %s", mac_address)
+                return False
+            except Exception as e:
+                logger.error("BLE: ошибка отправки '%s' на %s: %s", command, mac_address, e)
+                return False
         except asyncio.CancelledError:
-            logger.warning("BLE: таймаут подключения к %s", mac_address)
+            logger.warning("BLE: таймаут поиска %s", mac_address)
             return False
         except Exception as e:
-            logger.error("BLE: ошибка отправки '%s' на %s: %s", command, mac_address, e)
+            if 'InProgress' in str(e) and attempt == 0:
+                logger.warning("BLE: адаптер занят, сброс... (%s)", e)
+                reset_ble_adapter()
+                continue
+            logger.error("BLE: ошибка поиска %s: %s", mac_address, e)
             return False
-    except asyncio.CancelledError:
-        logger.warning("BLE: таймаут поиска %s", mac_address)
-        return False
-    except Exception as e:
-        logger.error("BLE: ошибка поиска %s: %s", mac_address, e)
-        return False
+    return False
 
 
 async def ble_scan_cameras(scan_timeout: float = 10) -> list:
     """Сканирование BLE — поиск камер GCBT40."""
-    try:
-        devices = await BleakScanner.discover(timeout=scan_timeout)
-        return [d for d in devices if d.name and "GCBT40" in d.name]
-    except Exception as e:
-        logger.error("BLE scan error: %s", e)
-        return []
+    for attempt in range(2):
+        try:
+            devices = await BleakScanner.discover(timeout=scan_timeout)
+            return [d for d in devices if d.name and "GCBT40" in d.name]
+        except Exception as e:
+            if 'InProgress' in str(e) and attempt == 0:
+                logger.warning("BLE: адаптер занят при сканировании, сброс... (%s)", e)
+                reset_ble_adapter()
+                continue
+            logger.error("BLE scan error: %s", e)
+            return []
+    return []
 
 
 # ── Поиск SSID новой камеры ──────────────────────────────────────────────────

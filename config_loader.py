@@ -12,7 +12,7 @@ logger = logging.getLogger("config_loader")
 # Значения по умолчанию (используются если нет ни в БД, ни в файле)
 DEFAULTS = {
     "NeedCalibration": "false",
-    "DownloadPath": "./downloads",
+    "DownloadPath": "/outgoing/cameratrap",
     "ConnectionStrings": json.dumps({
         "DefaultConnection": "Host=localhost;Database=phototrapdb;Username=postgres;Password=12345678"
     }),

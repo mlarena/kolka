@@ -75,6 +75,8 @@ class SnapshotDownloadManager:
         self.retry_delay = int(self.config.get('RetryDelay', 15))
         self.max_retries_per_camera = int(self.config.get('MaxRetriesPerCamera', 3))
         self.camera_cooldown = int(self.config.get('CameraCooldown', 20))
+        self.compress_after_download = str(self.config.get('CompressAfterDownload', 'true')).lower() in ('true', '1', 'yes')
+        self.compress_quality = int(self.config.get('CompressQuality', 12))
 
     def _apply_config(self, config: dict):
         """Применить загруженную конфигурацию к атрибутам класса."""
@@ -91,6 +93,8 @@ class SnapshotDownloadManager:
         self.retry_delay = int(config.get('RetryDelay', 15))
         self.max_retries_per_camera = int(config.get('MaxRetriesPerCamera', 3))
         self.camera_cooldown = int(config.get('CameraCooldown', 20))
+        self.compress_after_download = str(config.get('CompressAfterDownload', 'true')).lower() in ('true', '1', 'yes')
+        self.compress_quality = int(config.get('CompressQuality', 12))
 
     def _detect_wifi_interface(self) -> str:
         try:
@@ -118,24 +122,41 @@ class SnapshotDownloadManager:
         logger.info("База данных инициализирована")
 
     # ── BLE ──────────────────────────────────────────────────────────────────
+    def _reset_ble_adapter(self):
+        """Сбросить BLE-адаптер, чтобы снять состояние 'Operation already in progress'."""
+        try:
+            subprocess.run(['hciconfig', 'hci0', 'down'], capture_output=True, timeout=5)
+            time.sleep(1)
+            subprocess.run(['hciconfig', 'hci0', 'up'], capture_output=True, timeout=5)
+            time.sleep(2)
+            logger.info("BLE: адаптер сброшен (hci0 down/up)")
+        except Exception as e:
+            logger.warning(f"BLE: не удалось сбросить адаптер: {e}")
+
     async def send_ble_command(self, mac_address: str, command: str) -> bool:
         logger.info(f"BLE: Поиск {mac_address}...")
-        try:
-            device = await BleakScanner.find_device_by_address(mac_address, timeout=self.ble_scan_timeout)
-            if not device:
-                logger.warning(f"BLE: {mac_address} не найден")
-                return False
+        for attempt in range(2):
             try:
-                async with BleakClient(device, timeout=self.ble_command_timeout) as client:
-                    await client.write_gatt_char(self.CHARACTERISTIC_UUID, command.encode())
-                    logger.info(f"BLE: '{command}' → {mac_address}")
-                    return True
+                device = await BleakScanner.find_device_by_address(mac_address, timeout=self.ble_scan_timeout)
+                if not device:
+                    logger.warning(f"BLE: {mac_address} не найден")
+                    return False
+                try:
+                    async with BleakClient(device, timeout=self.ble_command_timeout) as client:
+                        await client.write_gatt_char(self.CHARACTERISTIC_UUID, command.encode())
+                        logger.info(f"BLE: '{command}' → {mac_address}")
+                        return True
+                except Exception as e:
+                    logger.error(f"BLE: ошибка {mac_address}: {e}")
+                    return False
             except Exception as e:
-                logger.error(f"BLE: ошибка {mac_address}: {e}")
+                if 'InProgress' in str(e) and attempt == 0:
+                    logger.warning(f"BLE: адаптер занят, сброс... ({e})")
+                    self._reset_ble_adapter()
+                    continue
+                logger.error(f"BLE: ошибка поиска {mac_address}: {e}")
                 return False
-        except Exception as e:
-            logger.error(f"BLE: ошибка поиска {mac_address}: {e}")
-            return False
+        return False
 
     def _ble_open_retry(self, mac_address: str):
         """Вернуть async-коллбэк для повторной отправки BLE open."""
@@ -204,6 +225,30 @@ class SnapshotDownloadManager:
                 self._run_nmcli('connection', 'down', 'id', con_name)
                 return
         logger.info("Wi-Fi: активное подключение не найдено")
+
+    def _compress_downloaded_file(self, file_path: Path) -> bool:
+        if not self.compress_after_download:
+            return False
+        if file_path.suffix.lower() not in ('.jpg', '.jpeg'):
+            logger.info("Сжатие пропущено: не JPG (%s)", file_path.name)
+            return False
+
+        compress_script = Path(__file__).resolve().parent / "compress_images.py"
+        if not compress_script.exists():
+            logger.warning("Сжатие невозможно: %s не найден", compress_script)
+            return False
+
+        cmd = [sys.executable, str(compress_script), str(file_path.parent)]
+        try:
+            logger.info("Сжатие: %s", cmd)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            logger.info("Сжатие stdout: %s", result.stdout.strip())
+            if result.stderr.strip():
+                logger.warning("Сжатие stderr: %s", result.stderr.strip())
+            return result.returncode == 0
+        except Exception as e:
+            logger.error("Ошибка при запуске compress_images.py: %s", e)
+            return False
 
     # ── Camera API ───────────────────────────────────────────────────────────
     async def _health_check(self, session) -> bool:
@@ -370,10 +415,9 @@ class SnapshotDownloadManager:
                             clean_path = snap_fpath.replace('A:\\', '').replace('\\', '/')
                             url = f"{self.CAMERA_API_URL}{clean_path}"
                             snap_time = datetime.now()
-                            date_folder = snap_time.strftime('%Y%m%d')
                             ext = Path(snap_file).suffix  # .JPG
                             local_name = f"{cam.Id}_{snap_time.strftime('%Y-%m-%d-%H-%M-%S')}{ext}"
-                            local_path = self.download_dir / date_folder / local_name
+                            local_path = self.download_dir / local_name
                             local_path.parent.mkdir(parents=True, exist_ok=True)
 
                             logger.info(f"Загрузка файла: {snap_file} -> {local_path}")
@@ -383,6 +427,9 @@ class SnapshotDownloadManager:
                                 file_size = local_path.stat().st_size if local_path.exists() else 0
                                 log_messages.append(f"Файл загружен: {local_name} ({file_size} байт)")
                                 logger.info(f"Файл загружен: {local_name} ({file_size} байт)")
+
+                                # Сжатие (если включено)
+                                self._compress_downloaded_file(local_path)
 
                                 # Запись в DownloadLog (успех)
                                 async with self.async_session() as dl_session:
