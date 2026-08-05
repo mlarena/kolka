@@ -1,62 +1,98 @@
-# Сервисы Kolka — Инструкция
-
-## Сервисы
-
-| Сервис | Тип | Назначение | Расписание |
-|--------|-----|-----------|------------|
-| `kolka_take_photo` | Timer + oneshot | Снимки | Нечётные часы: 01:00, 03:00, ..., 23:00 |
-| `kolka_download` | Timer + oneshot | Скачивание фото | Чётные часы: 00:00, 02:00, ..., 22:00 |
+# Kolka Snapshot Download — Установка и управление
 
 ## Установка
 
-```bash
-cd /scanner/scripts
+### 1. Калибровка (ОБЯЗАТЕЛЬНО перед первым запуском)
 
-# Калибровка (ОБЯЗАТЕЛЬНО перед первым запуском)
+```bash
 cd /scanner && source venv/bin/activate
 python3 calibration.py
-
-# Установка сервисов
-sudo bash scripts/install_take_photo.sh
-sudo bash scripts/install_download.sh
 ```
 
-## Управление kolka_take_photo (timer)
+Калибровка:
+- Сканирует BLE-эфир и находит фотоловушки (GCBT40)
+- Записывает Name + MacAddress в таблицу `PhotoTrap`
+- Привязывает Wi-Fi SSID (`CAM_*`) к каждой камере
+- Проверяет, не настроены ли уже все камеры (если да — пропускает)
+
+### 2. Установка сервиса
+
+```bash
+sudo bash /scanner/scripts/install_snapshot_download.sh
+```
+
+Скрипт:
+- Копирует файлы в `/opt/kolka_service_snapshot_download/`
+- Создаёт виртуальное окружение и устанавливает зависимости
+- Создаёт systemd service (oneshot) и timer
+- Настраивает ротацию логов (14 дней, gzip)
+- Активирует и запускает таймер
+
+### 3. Проверка установки
 
 ```bash
 # Статус таймера
-sudo systemctl status kolka_take_photo.timer
-sudo systemctl list-timers kolka_take_photo.timer
+sudo systemctl status kolka_snapshot_download.timer
 
-# Ручной запуск снимков
-sudo systemctl start kolka_take_photo
+# Список таймеров
+sudo systemctl list-timers kolka_snapshot_download.timer
 
-# Остановка таймера
-sudo systemctl stop kolka_take_photo.timer
-sudo systemctl disable kolka_take_photo.timer
-
-# Включение таймера
-sudo systemctl enable kolka_take_photo.timer
-sudo systemctl start kolka_take_photo.timer
+# Проверка камер в БД
+psql -U postgres -d phototrapdb -c 'SELECT "Id", "Name", "MacAddress", "WifiSSID" FROM "PhotoTrap";'
 ```
 
-## Управление kolka_download (timer)
+## Управление
+
+### Таймер
 
 ```bash
-# Статус таймера
-sudo systemctl status kolka_download.timer
-sudo systemctl list-timers kolka_download.timer
+# Статус
+sudo systemctl status kolka_snapshot_download.timer
+sudo systemctl list-timers kolka_snapshot_download.timer
 
-# Ручной запуск скачивания
-sudo systemctl start kolka_download
+# Ручной запуск (не дожидаясь таймера)
+sudo systemctl start kolka_snapshot_download
 
 # Остановка таймера
-sudo systemctl stop kolka_download.timer
-sudo systemctl disable kolka_download.timer
+sudo systemctl stop kolka_snapshot_download.timer
+sudo systemctl disable kolka_snapshot_download.timer
 
 # Включение таймера
-sudo systemctl enable kolka_download.timer
-sudo systemctl start kolka_download.timer
+sudo systemctl enable kolka_snapshot_download.timer
+sudo systemctl start kolka_snapshot_download.timer
+```
+
+### Изменение интервала запуска
+
+Расписание задаётся в файле `/etc/systemd/system/kolka_snapshot_download.timer`.
+
+**Текущее расписание** — каждый час:
+```
+OnCalendar=*-*-* *:00
+```
+
+**Примеры других расписаний:**
+
+```bash
+# Каждые 2 часа
+OnCalendar=*-*-* 00,02,04,06,08,10,12,14,16,18,20,22:00
+
+# Только с 08:00 до 15:00 каждый час
+OnCalendar=*-*-* 08,09,10,11,12,13,14,15:00
+
+# Каждые 30 минут
+OnCalendar=*-*-* *:00,30
+
+# Каждые 15 минут
+OnCalendar=*-*-* *:00,15,30,45
+```
+
+После изменения расписания:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart kolka_snapshot_download.timer
+# Проверить:
+sudo systemctl list-timers kolka_snapshot_download.timer
 ```
 
 ## Логи
@@ -64,27 +100,23 @@ sudo systemctl start kolka_download.timer
 ### Через systemd journal
 
 ```bash
-# Take Photo — последние 100 строк
-sudo journalctl -u kolka_take_photo -n 100
+# Последние 100 строк
+sudo journalctl -u kolka_snapshot_download -n 100
 
-# Take Photo — в реальном времени
-sudo journalctl -u kolka_take_photo -f
-
-# Download — последние запуски
-sudo journalctl -u kolka_download --since today
+# В реальном времени
+sudo journalctl -u kolka_snapshot_download -f
 
 # Только ошибки
-sudo journalctl -u kolka_take_photo -p err
+sudo journalctl -u kolka_snapshot_download -p err
+
+# За сегодня
+sudo journalctl -u kolka_snapshot_download --since today
 ```
 
 ### Через файлы
 
 ```bash
-# Take Photo
-tail -f /opt/kolka_service_take_photo/logs/take_photo_log_*.log
-
-# Download
-tail -f /opt/kolka_service_download/logs/download_log_*.log
+tail -f /opt/kolka_service_snapshot_download/logs/snapshot_download_log_*.log
 ```
 
 ### Ротация логов
@@ -97,11 +129,14 @@ tail -f /opt/kolka_service_download/logs/download_log_*.log
 ## Удаление
 
 ```bash
-cd /scanner/scripts
-
-sudo bash uninstall_take_photo.sh
-sudo bash uninstall_download.sh
+sudo bash /scanner/scripts/uninstall_snapshot_download.sh
 ```
+
+Скрипт:
+- Останавливает сервис и таймер
+- Удаляет systemd-файлы
+- Удаляет конфигурацию logrotate
+- Удаляет рабочую директорию `/opt/kolka_service_snapshot_download/`
 
 ## Конфигурация
 
@@ -110,40 +145,64 @@ sudo bash uninstall_download.sh
 2. **Файл** `appsettings.json` — средний
 3. **Дефолты** в коде — наименьший
 
-Изменить конфиг можно через БД:
+### Ключевые параметры
+
+| Параметр | Значение по умолчанию | Описание |
+|----------|----------------------|----------|
+| `DownloadPath` | `/outgoing/cameratrap` | Куда сохранять загруженные фото |
+| `CamerasCount` | `1` | Ожидаемое количество камер |
+| `WifiPassword` | `12345678` | Пароль Wi-Fi камер |
+| `WifiConnectTimeout` | `90` | Таймаут подключения к Wi-Fi (сек) |
+| `WifiMaxRetries` | `5` | Попыток подключения к Wi-Fi |
+| `WifiWaitAfterOpen` | `25` | Ожидание после BLE open перед Wi-Fi (сек) |
+| `MaxRetriesPerCamera` | `3` | Попыток BLE open + Wi-Fi connect |
+| `BleScanTimeout` | `10` | Таймаут BLE-сканирования (сек) |
+| `BleCommandTimeout` | `10` | Таймаут BLE-подключения (сек) |
+| `CameraCooldown` | `20` | Пауза между камерами (сек) |
+| `CompressAfterDownload` | `true` | Сжимать JPG после загрузки |
+| `CompressQuality` | `12` | Качество сжатия ffmpeg (-q:v, 1–31) |
+
+Изменить параметр через БД:
 ```sql
--- Количество камер
 INSERT INTO "PhotoTrapConfig" ("Key", "Value", "Description")
 VALUES ('CamerasCount', '2', 'Количество фотоловушек')
 ON CONFLICT ("Key") DO UPDATE SET "Value" = EXCLUDED."Value";
 ```
 
-### Ключевые параметры
+## Структура файлов
 
-| Параметр | Значение | Описание |
-|----------|----------|----------|
-| `WifiConnectTimeout` | 90 | Таймаут подключения к Wi-Fi одной камеры (сек) |
-| `WifiMaxRetries` | 5 | Попыток подключения к Wi-Fi камеры |
-| `MaxRetriesPerCamera` | 3 | Попыток BLE open + Wi-Fi connect (внешний цикл) |
-| `WifiWaitAfterOpen` | 25 | Ожидание после BLE open перед Wi-Fi (сек) |
-| `BleScanTimeout` | 10 | Таймаут BLE-сканирования (сек) |
-| `BleCommandTimeout` | 10 | Таймаут BLE-подключения (сек) |
-| `CameraCooldown` | 20 | Пауза между камерами (сек) |
-| `WifiDownloadRetries` | 3 | Реконнектов Wi-Fi при обрыве загрузки |
+### Исходники (/scanner/)
 
-## Калибровка
-
-Калибровка выполняется **вручную** перед первым запуском:
-
-```bash
-cd /scanner && source venv/bin/activate
-python3 calibration.py
+```
+/scanner/
+├── calibration.py                     # Калибровка камер
+├── kolka_snapshot_and_download.py     # Основной скрипт (снимок + загрузка)
+├── config_loader.py                   # Загрузка конфигурации
+├── compress_images.py                 # Сжатие изображений (ffmpeg)
+├── models.py                          # Модели БД (SQLAlchemy)
+├── appsettings.json                   # Конфигурация
+├── requirements.txt                   # Зависимости Python
+└── scripts/
+    ├── install_snapshot_download.sh   # Установка сервиса
+    ├── uninstall_snapshot_download.sh # Удаление сервиса
+    ├── INSTRUCTIONS.md                # Этот файл
+    ├── WORK.md                        # Принцип работы
+    └── TECHNICAL_TASK.md              # Техническое задание
 ```
 
-Проверка что камеры настроены:
-```sql
-SELECT "Id", "Name", "MacAddress", "WifiSSID" FROM "PhotoTrap";
-SELECT "Value" FROM "PhotoTrapConfig" WHERE "Key" = 'CamerasCount';
+### Сервис (/opt/kolka_service_snapshot_download/)
+
+```
+/opt/kolka_service_snapshot_download/
+├── kolka_snapshot_and_download.py
+├── models.py
+├── config_loader.py
+├── compress_images.py
+├── appsettings.json
+├── requirements.txt
+├── service.lock         # Файл-блокировка (создаётся при запуске)
+├── venv/                # Виртуальное окружение
+└── logs/                # Лог-файлы
 ```
 
 ## Требования
@@ -154,27 +213,3 @@ SELECT "Value" FROM "PhotoTrapConfig" WHERE "Key" = 'CamerasCount';
 - NetworkManager (nmcli)
 - ffmpeg (для сжатия изображений)
 
-## Структура файлов
-
-```
-/opt/kolka_service_take_photo/
-├── kolka_take_photo.py    # Основной скрипт
-├── models.py              # Модели БД
-├── config_loader.py       # Загрузка конфига
-├── compress_images.py     # Сжатие изображений
-├── appsettings.json       # Конфигурация
-├── requirements.txt       # Зависимости
-├── venv/                  # Виртуальное окружение
-└── logs/                  # Лог-файлы
-
-/opt/kolka_service_download/
-├── kolka_download.py      # Основной скрипт
-├── models.py              # Модели БД
-├── config_loader.py       # Загрузка конфига
-├── compress_images.py     # Сжатие изображений
-├── appsettings.json       # Конфигурация
-├── requirements.txt       # Зависимости
-├── service.lock           # Файл-блокировка (создаётся при запуске)
-├── venv/                  # Виртуальное окружение
-└── logs/                  # Лог-файлы
-```
