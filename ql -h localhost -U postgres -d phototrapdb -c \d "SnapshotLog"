@@ -1,0 +1,22 @@
+                                          Table "public.SnapshotLog"
+    Column    |            Type             | Collation | Nullable |                  Default                  
+--------------+-----------------------------+-----------+----------+-------------------------------------------
+ Id           | integer                     |           | not null | nextval('"SnapshotLog_Id_seq"'::regclass)
+ PhotoTrapId  | integer                     |           | not null | 
+ CycleNumber  | integer                     |           |          | 
+ StartTime    | timestamp without time zone |           | not null | 
+ EndTime      | timestamp without time zone |           |          | 
+ FileName     | character varying(255)      |           |          | 
+ Status       | character varying(20)       |           |          | 'PENDING'::character varying
+ LogMessage   | text                        |           |          | 
+ ErrorMessage | text                        |           |          | 
+ CreatedAt    | timestamp without time zone |           |          | CURRENT_TIMESTAMP
+Indexes:
+    "SnapshotLog_pkey" PRIMARY KEY, btree ("Id")
+    "idx_snaplog_createdat" btree ("CreatedAt")
+    "idx_snaplog_phototrapid" btree ("PhotoTrapId")
+    "idx_snaplog_starttime" btree ("StartTime")
+    "idx_snaplog_status" btree ("Status")
+Foreign-key constraints:
+    "SnapshotLog_PhotoTrapId_fkey" FOREIGN KEY ("PhotoTrapId") REFERENCES "PhotoTrap"("Id") ON DELETE CASCADE
+
